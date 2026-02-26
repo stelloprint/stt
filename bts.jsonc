@@ -19,7 +19,12 @@
   "backend": "none",
   "runtime": "none",
   "frontend": ["tanstack-router"],
-  "addons": [],
+  "addons": [
+		"tauri",
+		"biome",
+		"ultracite",
+		"lefthook"
+	],
   "examples": [],
   "auth": "none",
   "payments": "none",
