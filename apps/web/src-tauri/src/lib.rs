@@ -1,4 +1,5 @@
 mod db;
+mod keys;
 mod prefs;
 
 use db::{Database, Entry, EntryCreate, Session, SessionCreate};

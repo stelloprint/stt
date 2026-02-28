@@ -28,3 +28,4 @@ anyhow = "1.0"
 parking_lot = "0.12"
 rusqlite = { version = "0.32", features = ["bundled"] }
 thiserror = "2.0"
+rdev = "0.5"
