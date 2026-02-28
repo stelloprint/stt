@@ -11,7 +11,7 @@ import { Toaster } from "@/components/ui/sonner";
 
 import "../index.css";
 
-export type RouterAppContext = {};
+export type RouterAppContext = object;
 
 export const Route = createRootRouteWithContext<RouterAppContext>()({
 	component: RootComponent,
