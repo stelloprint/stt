@@ -31,3 +31,6 @@ thiserror = "2.0"
 rdev = "0.5"
 enigo = "0.3"
 arboard = "3.4"
+whisper-rs = { version = "0.15", features = ["metal"] }
+sha2 = "0.10"
+hex = "0.4"
