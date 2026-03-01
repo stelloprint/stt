@@ -183,6 +183,8 @@ fn build_inference_params(
         .unwrap_or(4);
 
     params.set_n_threads(n_threads);
+    params.set_no_timestamps(true);
+    params.set_suppress_nst(true);
     params.set_print_special(false);
     params.set_print_progress(false);
     params.set_print_realtime(false);
@@ -191,6 +193,7 @@ fn build_inference_params(
     match profile {
         ModelProfile::EnglishSmall => {
             params.set_language(Some("en"));
+            params.set_translate(false);
         }
         ModelProfile::MultilingualSmall | ModelProfile::MultilingualMedium => {
             params.set_language(Some("auto"));
