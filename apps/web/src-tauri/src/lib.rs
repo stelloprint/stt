@@ -1,14 +1,17 @@
 mod db;
 mod keys;
 mod prefs;
+mod stt;
 
 use db::{Database, Entry, EntryCreate, Session, SessionCreate};
 use prefs::{Preferences, Prefs};
 use std::sync::Arc;
+use stt::{SttEngine, TranscriptionResult};
 
 pub struct AppState {
     pub prefs: Arc<Prefs>,
     pub db: Arc<Database>,
+    pub stt: Arc<SttEngine>,
 }
 
 #[tauri::command]
@@ -128,6 +131,39 @@ fn search_entries(state: tauri::State<'_, AppState>, query: String) -> Result<Ve
     state.db.search_entries(&query).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn load_model(state: tauri::State<'_, AppState>, profile: String) -> Result<(), String> {
+    let profile = match profile.as_str() {
+        "small.en" => prefs::ModelProfile::EnglishSmall,
+        "multilingual-small" => prefs::ModelProfile::MultilingualSmall,
+        "multilingual-medium" => prefs::ModelProfile::MultilingualMedium,
+        _ => return Err(format!("Unknown profile: {}", profile)),
+    };
+
+    let models_dir = Prefs::get_models_dir().map_err(|e| e.to_string())?;
+    state
+        .stt
+        .load_model(profile, models_dir)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn transcribe(
+    state: tauri::State<'_, AppState>,
+    audio_data: Vec<f32>,
+) -> Result<TranscriptionResult, String> {
+    let prefs = state.prefs.get();
+    state
+        .stt
+        .transcribe(&audio_data, &prefs)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn is_model_loaded(state: tauri::State<'_, AppState>) -> bool {
+    state.stt.is_loaded()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let prefs = match Prefs::new() {
@@ -146,7 +182,11 @@ pub fn run() {
         }
     };
 
-    let app_state = AppState { prefs, db };
+    let app_state = AppState {
+        prefs,
+        db,
+        stt: Arc::new(SttEngine::new()),
+    };
 
     tauri::Builder::default()
         .manage(app_state)
@@ -168,6 +208,9 @@ pub fn run() {
             update_entry,
             delete_entry,
             search_entries,
+            load_model,
+            transcribe,
+            is_model_loaded,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
