@@ -6,7 +6,7 @@ mod type_;
 use db::{Database, Entry, EntryCreate, Session, SessionCreate};
 use prefs::{Preferences, Prefs};
 use std::sync::Arc;
-use type_::{TypeMethod, TypeOptions, Typer};
+use type_::{ContextHeuristic, TypeMethod, TypeOptions, Typer};
 
 pub struct AppState {
     pub prefs: Arc<Prefs>,
