@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { api } from "@/lib/api";
+import { api, type Entry, type Session } from "@/lib/api";
 
 export const Route = createFileRoute("/logs")({
 	loader: async () => {
@@ -19,9 +19,10 @@ export const Route = createFileRoute("/logs")({
 });
 
 function LogsComponent() {
-	const { sessions, entries } = Route.useLoaderData();
+	const { sessions, entries }: { entries: Entry[]; sessions: Session[] } =
+		Route.useLoaderData();
 	const [searchQuery, setSearchQuery] = useState("");
-	const [filteredEntries, setFilteredEntries] = useState(entries);
+	const [filteredEntries, setFilteredEntries] = useState<Entry[]>(entries);
 	const [isSearching, setIsSearching] = useState(false);
 
 	const handleSearch = async () => {
@@ -87,7 +88,9 @@ function LogsComponent() {
 		}
 	};
 
-	const sessionMap = new Map(sessions.map((s) => [s.id, s]));
+	const sessionMap = new Map<string, Session>(
+		sessions.map((s: Session) => [s.id, s])
+	);
 
 	return (
 		<div className="container mx-auto max-w-5xl px-4 py-2">
@@ -128,7 +131,7 @@ function LogsComponent() {
 							<p className="text-muted-foreground text-sm">No sessions yet.</p>
 						) : (
 							<div className="grid gap-2">
-								{sessions.map((session) => (
+								{sessions.map((session: Session) => (
 									<div
 										className="flex items-center justify-between rounded border p-2 text-xs"
 										key={session.id}
@@ -164,7 +167,7 @@ function LogsComponent() {
 							</p>
 						) : (
 							<div className="grid gap-2">
-								{filteredEntries.map((entry) => {
+								{filteredEntries.map((entry: Entry) => {
 									const session = sessionMap.get(entry.session_id);
 									return (
 										<div className="rounded border p-3 text-xs" key={entry.id}>
@@ -175,7 +178,7 @@ function LogsComponent() {
 												</span>
 												<span>{getModeLabel(entry.source)}</span>
 											</div>
-											<p className="break-words">{entry.text}</p>
+											<p className="wrap-break-word">{entry.text}</p>
 											{session && (
 												<div className="mt-1 text-muted-foreground">
 													Session: {session.id.slice(0, 8)} | Typed:{" "}

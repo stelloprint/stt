@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+
 import {
 	Clock,
 	Download,
@@ -16,12 +17,12 @@ import { api, type Entry, type Session } from "@/lib/api";
 export const Route = createFileRoute("/record")({
 	loader: async () => {
 		const sessions = await api.sessions.getAll();
-		const activeSessions = sessions.filter((s) => !s.ended_at);
+		const activeSessions = sessions.filter((s: Session) => !s.ended_at);
 		const entries = await api.entries.getAll();
 		return { sessions, activeSessions, entries };
 	},
 	component: RecordComponent,
-});
+})
 
 function RecordComponent() {
 	const { sessions, activeSessions } = Route.useLoaderData();
@@ -109,8 +110,14 @@ function RecordComponent() {
 	const getTotalStats = () => {
 		const sessionData =
 			isRecording && currentSession ? [...sessions, currentSession] : sessions;
-		const totalWords = sessionData.reduce((acc, s) => acc + s.words_count, 0);
-		const totalChars = sessionData.reduce((acc, s) => acc + s.chars_count, 0);
+		const totalWords = sessionData.reduce(
+			(acc: number, s: Session) => acc + s.words_count,
+			0
+		);
+		const totalChars = sessionData.reduce(
+			(acc: number, s: Session) => acc + s.chars_count,
+			0
+		);
 		return { totalWords, totalChars, totalSessions: sessionData.length };
 	};
 
@@ -230,7 +237,7 @@ function RecordComponent() {
 										<span>{stats.totalChars} chars</span>
 									</div>
 								</div>
-								{sessions.slice(0, 10).map((session) => (
+								{sessions.slice(0, 10).map((session: Session) => (
 									<div
 										className="flex items-center justify-between rounded border p-2 text-xs"
 										key={session.id}

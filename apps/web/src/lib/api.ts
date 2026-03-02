@@ -125,9 +125,9 @@ export const api = {
 		) =>
 			invoke<Session | null>("update_session", {
 				id,
-				endedAt,
-				charsCount,
-				wordsCount,
+				ended_at: endedAt,
+				chars_count: charsCount,
+				words_count: wordsCount,
 			}),
 		delete: (id: string) => invoke<boolean>("delete_session", { id }),
 	},
@@ -136,7 +136,7 @@ export const api = {
 		create: (entry: EntryCreate) => invoke<Entry>("create_entry", { entry }),
 		get: (id: string) => invoke<Entry | null>("get_entry", { id }),
 		getBySession: (sessionId: string) =>
-			invoke<Entry[]>("get_entries_by_session", { sessionId }),
+			invoke<Entry[]>("get_entries_by_session", { session_id: sessionId }),
 		getAll: () => invoke<Entry[]>("get_all_entries"),
 		update: (id: string, text?: string, typed?: boolean) =>
 			invoke<Entry | null>("update_entry", { id, text, typed }),
