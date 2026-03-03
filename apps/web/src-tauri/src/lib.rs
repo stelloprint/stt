@@ -1,13 +1,14 @@
 mod db;
 mod keys;
+mod permissions;
 mod prefs;
-mod type_;
 mod stt;
+mod type_;
 
 use db::{Database, Entry, EntryCreate, Session, SessionCreate};
+use permissions::{PermissionState, Permissions};
 use prefs::{Preferences, Prefs};
 use std::sync::Arc;
-use type_::{TypeMethod, TypeOptions, Typer};
 use stt::{SttEngine, TranscriptionResult};
 use type_::{ContextHeuristic, TypeMethod, TypeOptions, Typer};
 
@@ -167,6 +168,36 @@ fn is_model_loaded(state: tauri::State<'_, AppState>) -> bool {
     state.stt.is_loaded()
 }
 
+#[tauri::command]
+fn check_microphone_permission() -> PermissionState {
+    Permissions::check_microphone()
+}
+
+#[tauri::command]
+fn check_accessibility_permission() -> PermissionState {
+    Permissions::check_accessibility()
+}
+
+#[tauri::command]
+fn request_microphone_permission() -> Result<PermissionState, String> {
+    Permissions::request_microphone()
+}
+
+#[tauri::command]
+fn request_accessibility_permission() -> Result<PermissionState, String> {
+    Permissions::request_accessibility()
+}
+
+#[tauri::command]
+fn open_microphone_settings() -> Result<(), String> {
+    Permissions::open_microphone_settings()
+}
+
+#[tauri::command]
+fn open_accessibility_settings() -> Result<(), String> {
+    Permissions::open_accessibility_settings()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let prefs = match Prefs::new() {
@@ -214,6 +245,12 @@ pub fn run() {
             load_model,
             transcribe,
             is_model_loaded,
+            check_microphone_permission,
+            check_accessibility_permission,
+            request_microphone_permission,
+            request_accessibility_permission,
+            open_microphone_settings,
+            open_accessibility_settings,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
