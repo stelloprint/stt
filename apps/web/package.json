@@ -11,7 +11,10 @@
     "check-types": "tsc --noEmit",
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build"
+    "desktop:build": "tauri build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@base-ui/react": "^1.0.0",
@@ -37,14 +40,19 @@
     "@stt/config": "workspace:*",
     "@tanstack/react-router-devtools": "^1.141.1",
     "@tanstack/router-plugin": "^1.141.1",
+    "@tauri-apps/cli": "^2.4.0",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^22.13.14",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@vitejs/plugin-react": "^5.1.4",
+    "@vitejs/plugin-react-swc": "^4.2.3",
+    "jsdom": "^28.1.0",
     "postcss": "^8.5.3",
     "tailwindcss": "^4.0.15",
     "typescript": "catalog:",
     "vite": "^6.2.2",
-    "@tauri-apps/cli": "^2.4.0"
+    "vitest": "^4.0.18"
   }
 }
