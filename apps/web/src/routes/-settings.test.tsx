@@ -6,162 +6,353 @@ vi.mock("@/lib/api", () => ({
 }));
 
 describe("Settings Form Validation", () => {
-	it("should validate mode values", () => {
+	describe("Mode Validation", () => {
 		const validModes = ["hold", "toggle"];
-		expect(validModes.includes("hold")).toBe(true);
-		expect(validModes.includes("toggle")).toBe(true);
+
+		it("should accept hold mode", () => {
+			expect(validModes.includes("hold")).toBe(true);
+		});
+
+		it("should accept toggle mode", () => {
+			expect(validModes.includes("toggle")).toBe(true);
+		});
+
+		it("should reject invalid mode values", () => {
+			expect(validModes.includes("invalid")).toBe(false);
+			expect(validModes.includes("press")).toBe(false);
+			expect(validModes.includes("")).toBe(false);
+		});
 	});
 
-	it("should reject invalid mode values", () => {
-		const validModes = ["hold", "toggle"];
-		expect(validModes.includes("invalid")).toBe(false);
+	describe("Silence Seconds Range", () => {
+		const isValidSilenceSeconds = (value: number) =>
+			value >= 0.5 && value <= 30;
+
+		it("should accept minimum boundary value", () => {
+			expect(isValidSilenceSeconds(0.5)).toBe(true);
+		});
+
+		it("should accept maximum boundary value", () => {
+			expect(isValidSilenceSeconds(30)).toBe(true);
+		});
+
+		it("should accept typical value", () => {
+			expect(isValidSilenceSeconds(3.0)).toBe(true);
+		});
+
+		it("should reject value below minimum", () => {
+			expect(isValidSilenceSeconds(0.1)).toBe(false);
+			expect(isValidSilenceSeconds(0)).toBe(false);
+			expect(isValidSilenceSeconds(0.49)).toBe(false);
+		});
+
+		it("should reject value above maximum", () => {
+			expect(isValidSilenceSeconds(31)).toBe(false);
+			expect(isValidSilenceSeconds(100)).toBe(false);
+		});
 	});
 
-	it("should validate silence_seconds range", () => {
-		const validRange = (value: number) => value >= 0.5 && value <= 30;
-		expect(validRange(3.0)).toBe(true);
-		expect(validRange(0.5)).toBe(true);
-		expect(validRange(30)).toBe(true);
-		expect(validRange(0.1)).toBe(false);
-		expect(validRange(31)).toBe(false);
-	});
-
-	it("should validate silence_rms values", () => {
+	describe("Silence RMS Validation", () => {
 		const validValues = ["low", "medium", "high"];
-		expect(validValues.includes("low")).toBe(true);
-		expect(validValues.includes("medium")).toBe(true);
-		expect(validValues.includes("high")).toBe(true);
+
+		it("should accept low", () => {
+			expect(validValues.includes("low")).toBe(true);
+		});
+
+		it("should accept medium", () => {
+			expect(validValues.includes("medium")).toBe(true);
+		});
+
+		it("should accept high", () => {
+			expect(validValues.includes("high")).toBe(true);
+		});
+
+		it("should reject invalid values", () => {
+			expect(validValues.includes("medium-high")).toBe(false);
+			expect(validValues.includes("")).toBe(false);
+		});
 	});
 
-	it("should validate model_profile values", () => {
+	describe("Model Profile Validation", () => {
 		const validProfiles = [
 			"small.en",
 			"multilingual-small",
 			"multilingual-medium",
 		];
-		expect(validProfiles.includes("small.en")).toBe(true);
-		expect(validProfiles.includes("multilingual-small")).toBe(true);
-		expect(validProfiles.includes("multilingual-medium")).toBe(true);
+
+		it("should accept small.en", () => {
+			expect(validProfiles.includes("small.en")).toBe(true);
+		});
+
+		it("should accept multilingual-small", () => {
+			expect(validProfiles.includes("multilingual-small")).toBe(true);
+		});
+
+		it("should accept multilingual-medium", () => {
+			expect(validProfiles.includes("multilingual-medium")).toBe(true);
+		});
+
+		it("should reject invalid profiles", () => {
+			expect(validProfiles.includes("large")).toBe(false);
+			expect(validProfiles.includes("tiny")).toBe(false);
+		});
 	});
 
-	it("should validate throttle_ms range", () => {
-		const validRange = (value: number) => value >= 0 && value <= 500;
-		expect(validRange(0)).toBe(true);
-		expect(validRange(500)).toBe(true);
-		expect(validRange(100)).toBe(true);
-		expect(validRange(-1)).toBe(false);
-		expect(validRange(501)).toBe(false);
+	describe("Throttle_ms Range", () => {
+		const isValidThrottle = (value: number) => value >= 0 && value <= 500;
+
+		it("should accept minimum boundary", () => {
+			expect(isValidThrottle(0)).toBe(true);
+		});
+
+		it("should accept maximum boundary", () => {
+			expect(isValidThrottle(500)).toBe(true);
+		});
+
+		it("should accept typical value", () => {
+			expect(isValidThrottle(100)).toBe(true);
+		});
+
+		it("should reject negative values", () => {
+			expect(isValidThrottle(-1)).toBe(false);
+		});
+
+		it("should reject values above maximum", () => {
+			expect(isValidThrottle(501)).toBe(false);
+			expect(isValidThrottle(1000)).toBe(false);
+		});
 	});
 
-	it("should validate chunk_seconds range", () => {
-		const validRange = (value: number) => value >= 10 && value <= 300;
-		expect(validRange(60)).toBe(true);
-		expect(validRange(10)).toBe(true);
-		expect(validRange(300)).toBe(true);
-		expect(validRange(9)).toBe(false);
-		expect(validRange(301)).toBe(false);
+	describe("Chunk Seconds Range", () => {
+		const isValidChunk = (value: number) => value >= 10 && value <= 300;
+
+		it("should accept minimum boundary", () => {
+			expect(isValidChunk(10)).toBe(true);
+		});
+
+		it("should accept maximum boundary", () => {
+			expect(isValidChunk(300)).toBe(true);
+		});
+
+		it("should accept typical value", () => {
+			expect(isValidChunk(60)).toBe(true);
+		});
+
+		it("should reject values below minimum", () => {
+			expect(isValidChunk(9)).toBe(false);
+			expect(isValidChunk(0)).toBe(false);
+		});
+
+		it("should reject values above maximum", () => {
+			expect(isValidChunk(301)).toBe(false);
+		});
 	});
 
-	it("should validate max_hours range", () => {
-		const validRange = (value: number) => value >= 1 && value <= 24;
-		expect(validRange(8)).toBe(true);
-		expect(validRange(1)).toBe(true);
-		expect(validRange(24)).toBe(true);
-		expect(validRange(0)).toBe(false);
-		expect(validRange(25)).toBe(false);
+	describe("Max Hours Range", () => {
+		const isValidMaxHours = (value: number) => value >= 1 && value <= 24;
+
+		it("should accept minimum boundary", () => {
+			expect(isValidMaxHours(1)).toBe(true);
+		});
+
+		it("should accept maximum boundary", () => {
+			expect(isValidMaxHours(24)).toBe(true);
+		});
+
+		it("should accept typical value", () => {
+			expect(isValidMaxHours(8)).toBe(true);
+		});
+
+		it("should reject zero", () => {
+			expect(isValidMaxHours(0)).toBe(false);
+		});
+
+		it("should reject values above maximum", () => {
+			expect(isValidMaxHours(25)).toBe(false);
+		});
 	});
 
-	it("should validate max_file_gb range", () => {
-		const validRange = (value: number) => value >= 1 && value <= 32;
-		expect(validRange(4)).toBe(true);
-		expect(validRange(1)).toBe(true);
-		expect(validRange(32)).toBe(true);
-		expect(validRange(0)).toBe(false);
-		expect(validRange(33)).toBe(false);
+	describe("Max File GB Range", () => {
+		const isValidMaxFileGb = (value: number) => value >= 1 && value <= 32;
+
+		it("should accept minimum boundary", () => {
+			expect(isValidMaxFileGb(1)).toBe(true);
+		});
+
+		it("should accept maximum boundary", () => {
+			expect(isValidMaxFileGb(32)).toBe(true);
+		});
+
+		it("should accept typical value", () => {
+			expect(isValidMaxFileGb(4)).toBe(true);
+		});
+
+		it("should reject zero", () => {
+			expect(isValidMaxFileGb(0)).toBe(false);
+		});
+
+		it("should reject values above maximum", () => {
+			expect(isValidMaxFileGb(33)).toBe(false);
+		});
 	});
 
-	it("should parse form values correctly", () => {
-		const formData = new FormData();
-		formData.set("mode", "hold");
-		formData.set("silence_seconds", "3.0");
-		formData.set("silence_rms", "medium");
-		formData.set("model_profile", "small.en");
-		formData.set("left_chord", "on");
-		formData.set("right_chord", "on");
-		formData.set("translate_to_english", "on");
-		formData.set("newline_at_end", "on");
-		formData.set("throttle_ms", "0");
-		formData.set("voice_commands_enabled", "on");
-		formData.set("map_newline", "Enter");
-		formData.set("chunk_seconds", "60");
-		formData.set("max_hours", "8");
-		formData.set("max_file_gb", "4");
+	describe("Form Data Parsing", () => {
+		it("should parse mode from form data", () => {
+			const formData = new FormData();
+			formData.set("mode", "hold");
+			expect(formData.get("mode")).toBe("hold");
+		});
 
-		expect(formData.get("mode")).toBe("hold");
-		expect(formData.get("silence_seconds")).toBe("3.0");
-		expect(formData.get("left_chord")).toBe("on");
+		it("should parse silence_seconds as float", () => {
+			const formData = new FormData();
+			formData.set("silence_seconds", "3.0");
+			const value = Number.parseFloat(
+				formData.get("silence_seconds") as string
+			);
+			expect(value).toBe(3.0);
+		});
+
+		it("should parse throttle_ms as integer", () => {
+			const formData = new FormData();
+			formData.set("throttle_ms", "100");
+			const value = Number.parseInt(formData.get("throttle_ms") as string, 10);
+			expect(value).toBe(100);
+		});
+
+		it("should parse checkbox as boolean", () => {
+			const formData = new FormData();
+			formData.set("left_chord", "on");
+			const isChecked = formData.get("left_chord") === "on";
+			expect(isChecked).toBe(true);
+		});
+
+		it("should handle missing form values with defaults", () => {
+			const formData = new FormData();
+			formData.set("silence_seconds", "");
+
+			const value =
+				Number.parseFloat(formData.get("silence_seconds") as string) || 3.0;
+			expect(value).toBe(3.0);
+		});
+
+		it("should handle empty throttle with default", () => {
+			const formData = new FormData();
+			formData.set("throttle_ms", "");
+
+			const value =
+				Number.parseInt(formData.get("throttle_ms") as string, 10) || 0;
+			expect(value).toBe(0);
+		});
 	});
 
-	it("should handle missing form values with defaults", () => {
-		const formData = new FormData();
-		formData.set("silence_seconds", "");
-		formData.set("throttle_ms", "");
+	describe("Voice Commands Map", () => {
+		it("should have newline mapping", () => {
+			expect(mockPreferences.voice_commands.map.newline).toBe("Enter");
+		});
 
-		const silence_seconds =
-			Number.parseFloat(formData.get("silence_seconds") as string) || 3.0;
-		const throttle_ms =
-			Number.parseInt(formData.get("throttle_ms") as string, 10) || 0;
+		it("should have period mapping", () => {
+			expect(mockPreferences.voice_commands.map.period).toBe(".");
+		});
 
-		expect(silence_seconds).toBe(3.0);
-		expect(throttle_ms).toBe(0);
+		it("should have comma mapping", () => {
+			expect(mockPreferences.voice_commands.map.comma).toBe(",");
+		});
+
+		it("should have tab mapping", () => {
+			expect(mockPreferences.voice_commands.map.tab).toBe("Tab");
+		});
+
+		it("should have new_paragraph mapping", () => {
+			expect(mockPreferences.voice_commands.map.new_paragraph).toBe(
+				"Enter Enter"
+			);
+		});
+
+		it("should have colon mapping", () => {
+			expect(mockPreferences.voice_commands.map.colon).toBe(":");
+		});
+
+		it("should have semicolon mapping", () => {
+			expect(mockPreferences.voice_commands.map.semicolon).toBe(";");
+		});
+
+		it("should have open_quote mapping", () => {
+			expect(mockPreferences.voice_commands.map.open_quote).toBe('"');
+		});
+
+		it("should have close_quote mapping", () => {
+			expect(mockPreferences.voice_commands.map.close_quote).toBe('"');
+		});
+
+		it("should have backtick mapping", () => {
+			expect(mockPreferences.voice_commands.map.backtick).toBe("`");
+		});
+
+		it("should have code_block mapping", () => {
+			expect(mockPreferences.voice_commands.map.code_block).toBe("```");
+		});
 	});
 
-	it("should validate voice command map values", () => {
-		const { voice_commands } = mockPreferences;
-		expect(voice_commands.map.newline).toBe("Enter");
-		expect(voice_commands.map.period).toBe(".");
-		expect(voice_commands.map.comma).toBe(",");
-		expect(voice_commands.map.tab).toBe("Tab");
+	describe("Display Labels", () => {
+		it("should have correct model profile labels", () => {
+			const labels: Record<string, string> = {
+				"small.en": "English (Small)",
+				"multilingual-small": "Multilingual (Small)",
+				"multilingual-medium": "Multilingual (Medium)",
+			};
+			expect(labels["small.en"]).toBe("English (Small)");
+			expect(labels["multilingual-small"]).toBe("Multilingual (Small)");
+			expect(labels["multilingual-medium"]).toBe("Multilingual (Medium)");
+		});
+
+		it("should have correct silence RMS labels", () => {
+			const labels: Record<string, string> = {
+				low: "Low",
+				medium: "Medium",
+				high: "High",
+			};
+			expect(labels.low).toBe("Low");
+			expect(labels.medium).toBe("Medium");
+			expect(labels.high).toBe("High");
+		});
+
+		it("should have correct mode labels", () => {
+			const labels: Record<string, string> = {
+				hold: "Hold (push-to-talk)",
+				toggle: "Toggle",
+				record: "Record",
+			};
+			expect(labels.hold).toBe("Hold (push-to-talk)");
+			expect(labels.toggle).toBe("Toggle");
+			expect(labels.record).toBe("Record");
+		});
 	});
 
-	it("should display correct model profile labels", () => {
-		const labels: Record<string, string> = {
-			"small.en": "English (Small)",
-			"multilingual-small": "Multilingual (Small)",
-			"multilingual-medium": "Multilingual (Medium)",
-		};
-		expect(labels["small.en"]).toBe("English (Small)");
-		expect(labels["multilingual-small"]).toBe("Multilingual (Small)");
-	});
+	describe("Hotkey Checkboxes", () => {
+		it("should handle checked left_chord", () => {
+			const formData = new FormData();
+			formData.set("left_chord", "on");
+			expect(formData.get("left_chord") === "on").toBe(true);
+		});
 
-	it("should display correct silence RMS labels", () => {
-		const labels: Record<string, string> = {
-			low: "Low",
-			medium: "Medium",
-			high: "High",
-		};
-		expect(labels.low).toBe("Low");
-		expect(labels.medium).toBe("Medium");
-		expect(labels.high).toBe("High");
-	});
+		it("should handle checked right_chord", () => {
+			const formData = new FormData();
+			formData.set("right_chord", "on");
+			expect(formData.get("right_chord") === "on").toBe(true);
+		});
 
-	it("should validate hotkey checkboxes", () => {
-		const formData = new FormData();
-		formData.set("left_chord", "on");
-		formData.set("right_chord", "on");
+		it("should handle unchecked checkbox", () => {
+			const formData = new FormData();
+			expect(formData.get("left_chord") === "on").toBe(false);
+		});
 
-		const left_chord = formData.get("left_chord") === "on";
-		const right_chord = formData.get("right_chord") === "on";
-
-		expect(left_chord).toBe(true);
-		expect(right_chord).toBe(true);
-	});
-
-	it("should handle unchecked checkboxes", () => {
-		const formData = new FormData();
-		// Checkbox not present means unchecked
-
-		const left_chord = formData.get("left_chord") === "on";
-		expect(left_chord).toBe(false);
+		it("should handle both checkboxes checked", () => {
+			const formData = new FormData();
+			formData.set("left_chord", "on");
+			formData.set("right_chord", "on");
+			const left = formData.get("left_chord") === "on";
+			const right = formData.get("right_chord") === "on";
+			expect(left && right).toBe(true);
+		});
 	});
 });
