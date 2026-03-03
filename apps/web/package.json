@@ -19,6 +19,7 @@
     "@stt/env": "workspace:*",
     "@tailwindcss/vite": "^4.0.15",
     "@tanstack/react-router": "^1.141.1",
+    "@tauri-apps/api": "^2.10.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dotenv": "catalog:",

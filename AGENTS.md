@@ -76,6 +76,18 @@ This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get sta
 
 ---
 
+## Agent Worktrees
+
+Coding agents work in isolated git worktrees created by their Team Lead. These environments must be created using the `task.sh` tool to allow parallel agent collaboration.
+
+More details available in the **task-worktrees** skill.
+
+```zsh
+task.sh start <task ID + descriptive feature name>        # Create worktree + new branch, configure beads
+```
+
+---
+
 ## Ultracite Code Standards
 
 This project uses **Ultracite**, a zero-config preset that enforces strict code quality standards through automated formatting and linting. 

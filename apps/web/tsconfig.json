@@ -14,5 +14,6 @@
     "paths": {
       "@/*": ["./src/*"]
     }
-  }
+  },
+  "exclude": ["src-tauri/target"]
 }
