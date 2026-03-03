@@ -1,13 +1,12 @@
 mod db;
 mod keys;
 mod prefs;
-mod type_;
 mod stt;
+mod type_;
 
 use db::{Database, Entry, EntryCreate, Session, SessionCreate};
 use prefs::{Preferences, Prefs};
 use std::sync::Arc;
-use type_::{TypeMethod, TypeOptions, Typer};
 use stt::{SttEngine, TranscriptionResult};
 use type_::{ContextHeuristic, TypeMethod, TypeOptions, Typer};
 

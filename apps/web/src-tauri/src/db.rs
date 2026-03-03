@@ -117,6 +117,16 @@ impl Database {
         Ok(db)
     }
 
+    #[cfg(test)]
+    pub fn new_in_memory() -> Result<Self, DbError> {
+        let conn = Connection::open_in_memory()?;
+        let db = Self {
+            conn: Mutex::new(conn),
+        };
+        db.run_migrations()?;
+        Ok(db)
+    }
+
     fn get_db_path() -> Result<PathBuf, DbError> {
         let proj_dirs = ProjectDirs::from("com", "stt", "sst").ok_or(DbError::NoAppDir)?;
 
@@ -524,4 +534,760 @@ pub fn count_words(text: &str) -> i64 {
 
 pub fn count_chars(text: &str) -> i64 {
     text.chars().count() as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_session() -> SessionCreate {
+        SessionCreate {
+            id: "test-session-1".to_string(),
+            mode: SessionMode::Hold,
+            started_at: 1000,
+            language: Some("en".to_string()),
+            model_profile: "base".to_string(),
+            translated: false,
+            app_name: Some("TestApp".to_string()),
+        }
+    }
+
+    fn create_test_entry(session_id: &str) -> EntryCreate {
+        EntryCreate {
+            id: "test-entry-1".to_string(),
+            session_id: session_id.to_string(),
+            started_at: 1000,
+            ended_at: 2000,
+            text: "Hello world test".to_string(),
+            source: SessionMode::Hold,
+            typed: false,
+        }
+    }
+
+    #[test]
+    fn test_create_and_get_session() {
+        let db = Database::new_in_memory().unwrap();
+        let session_create = create_test_session();
+
+        let created = db.create_session(session_create.clone()).unwrap();
+        assert_eq!(created.id, session_create.id);
+        assert_eq!(created.mode, session_create.mode);
+        assert_eq!(created.started_at, session_create.started_at);
+        assert_eq!(created.language, session_create.language);
+        assert_eq!(created.model_profile, session_create.model_profile);
+        assert_eq!(created.translated, session_create.translated);
+        assert_eq!(created.app_name, session_create.app_name);
+        assert_eq!(created.ended_at, None);
+        assert_eq!(created.chars_count, 0);
+        assert_eq!(created.words_count, 0);
+
+        let retrieved = db.get_session(&session_create.id).unwrap();
+        assert!(retrieved.is_some());
+        let session = retrieved.unwrap();
+        assert_eq!(session.id, session_create.id);
+    }
+
+    #[test]
+    fn test_get_nonexistent_session() {
+        let db = Database::new_in_memory().unwrap();
+        let result = db.get_session("nonexistent").unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_create_and_get_entry() {
+        let db = Database::new_in_memory().unwrap();
+        let session_id = "test-session-1".to_string();
+        let session_create = SessionCreate {
+            id: session_id.clone(),
+            mode: SessionMode::Hold,
+            started_at: 1000,
+            language: Some("en".to_string()),
+            model_profile: "base".to_string(),
+            translated: false,
+            app_name: None,
+        };
+        db.create_session(session_create).unwrap();
+
+        let entry_create = EntryCreate {
+            id: "test-entry-1".to_string(),
+            session_id: session_id.clone(),
+            started_at: 1000,
+            ended_at: 2000,
+            text: "Hello world test".to_string(),
+            source: SessionMode::Hold,
+            typed: false,
+        };
+        let created = db.create_entry(entry_create.clone()).unwrap();
+        assert_eq!(created.id, entry_create.id);
+        assert_eq!(created.session_id, entry_create.session_id);
+        assert_eq!(created.text, entry_create.text);
+        assert_eq!(created.source, entry_create.source);
+        assert_eq!(created.typed, entry_create.typed);
+
+        let retrieved = db.get_entry(&entry_create.id).unwrap();
+        assert!(retrieved.is_some());
+        let entry = retrieved.unwrap();
+        assert_eq!(entry.id, entry_create.id);
+    }
+
+    #[test]
+    fn test_get_entries_by_session() {
+        let db = Database::new_in_memory().unwrap();
+        let session_id = "test-session-1".to_string();
+        let session_create = SessionCreate {
+            id: session_id.clone(),
+            mode: SessionMode::Hold,
+            started_at: 1000,
+            language: Some("en".to_string()),
+            model_profile: "base".to_string(),
+            translated: false,
+            app_name: None,
+        };
+        db.create_session(session_create).unwrap();
+
+        let entry1 = EntryCreate {
+            id: "entry-1".to_string(),
+            session_id: session_id.clone(),
+            started_at: 1000,
+            ended_at: 2000,
+            text: "First entry".to_string(),
+            source: SessionMode::Hold,
+            typed: false,
+        };
+        let entry2 = EntryCreate {
+            id: "entry-2".to_string(),
+            session_id: session_id.clone(),
+            started_at: 2000,
+            ended_at: 3000,
+            text: "Second entry".to_string(),
+            source: SessionMode::Hold,
+            typed: true,
+        };
+        db.create_entry(entry1).unwrap();
+        db.create_entry(entry2).unwrap();
+
+        let entries = db.get_entries_by_session(&session_id).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].text, "First entry");
+        assert_eq!(entries[1].text, "Second entry");
+    }
+
+    #[test]
+    fn test_get_all_sessions() {
+        let db = Database::new_in_memory().unwrap();
+
+        let session1 = SessionCreate {
+            id: "session-1".to_string(),
+            mode: SessionMode::Hold,
+            started_at: 1000,
+            language: Some("en".to_string()),
+            model_profile: "base".to_string(),
+            translated: false,
+            app_name: None,
+        };
+        let session2 = SessionCreate {
+            id: "session-2".to_string(),
+            mode: SessionMode::Toggle,
+            started_at: 2000,
+            language: Some("es".to_string()),
+            model_profile: "small".to_string(),
+            translated: true,
+            app_name: None,
+        };
+
+        db.create_session(session1).unwrap();
+        db.create_session(session2).unwrap();
+
+        let sessions = db.get_all_sessions().unwrap();
+        assert_eq!(sessions.len(), 2);
+    }
+
+    #[test]
+    fn test_update_session() {
+        let db = Database::new_in_memory().unwrap();
+        let session_create = create_test_session();
+        db.create_session(session_create.clone()).unwrap();
+
+        let updated = db
+            .update_session(&session_create.id, Some(5000), Some(100), Some(20))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(updated.ended_at, Some(5000));
+        assert_eq!(updated.chars_count, 100);
+        assert_eq!(updated.words_count, 20);
+    }
+
+    #[test]
+    fn test_delete_session() {
+        let db = Database::new_in_memory().unwrap();
+        let session_id = "test-session-1".to_string();
+        let session_create = SessionCreate {
+            id: session_id.clone(),
+            mode: SessionMode::Hold,
+            started_at: 1000,
+            language: Some("en".to_string()),
+            model_profile: "base".to_string(),
+            translated: false,
+            app_name: None,
+        };
+        db.create_session(session_create).unwrap();
+
+        let entry_create = EntryCreate {
+            id: "test-entry-1".to_string(),
+            session_id: session_id.clone(),
+            started_at: 1000,
+            ended_at: 2000,
+            text: "Test entry".to_string(),
+            source: SessionMode::Hold,
+            typed: false,
+        };
+        db.create_entry(entry_create).unwrap();
+
+        let deleted = db.delete_session(&session_id).unwrap();
+        assert!(deleted);
+
+        let session = db.get_session(&session_id).unwrap();
+        assert!(session.is_none());
+
+        let entries = db.get_entries_by_session(&session_id).unwrap();
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn test_update_entry() {
+        let db = Database::new_in_memory().unwrap();
+        let session_id = "test-session-1".to_string();
+        let session_create = SessionCreate {
+            id: session_id.clone(),
+            mode: SessionMode::Hold,
+            started_at: 1000,
+            language: Some("en".to_string()),
+            model_profile: "base".to_string(),
+            translated: false,
+            app_name: None,
+        };
+        db.create_session(session_create).unwrap();
+
+        let entry_id = "test-entry-1".to_string();
+        let entry_create = EntryCreate {
+            id: entry_id.clone(),
+            session_id: session_id.clone(),
+            started_at: 1000,
+            ended_at: 2000,
+            text: "Original text".to_string(),
+            source: SessionMode::Hold,
+            typed: false,
+        };
+        db.create_entry(entry_create).unwrap();
+
+        let updated = db
+            .update_entry(&entry_id, Some("Updated text".to_string()), Some(true))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(updated.text, "Updated text");
+        assert!(updated.typed);
+    }
+
+    #[test]
+    fn test_delete_entry() {
+        let db = Database::new_in_memory().unwrap();
+        let session_id = "test-session-1".to_string();
+        let session_create = SessionCreate {
+            id: session_id.clone(),
+            mode: SessionMode::Hold,
+            started_at: 1000,
+            language: Some("en".to_string()),
+            model_profile: "base".to_string(),
+            translated: false,
+            app_name: None,
+        };
+        db.create_session(session_create).unwrap();
+
+        let entry_id = "test-entry-1".to_string();
+        let entry_create = EntryCreate {
+            id: entry_id.clone(),
+            session_id: session_id.clone(),
+            started_at: 1000,
+            ended_at: 2000,
+            text: "Test entry".to_string(),
+            source: SessionMode::Hold,
+            typed: false,
+        };
+        db.create_entry(entry_create).unwrap();
+
+        let deleted = db.delete_entry(&entry_id).unwrap();
+        assert!(deleted);
+
+        let entry = db.get_entry(&entry_id).unwrap();
+        assert!(entry.is_none());
+    }
+
+    #[test]
+    fn test_fts5_search() {
+        let db = Database::new_in_memory().unwrap();
+        let session_id = "test-session-1".to_string();
+        let session_create = SessionCreate {
+            id: session_id.clone(),
+            mode: SessionMode::Hold,
+            started_at: 1000,
+            language: Some("en".to_string()),
+            model_profile: "base".to_string(),
+            translated: false,
+            app_name: None,
+        };
+        db.create_session(session_create).unwrap();
+
+        let entry1 = EntryCreate {
+            id: "entry-1".to_string(),
+            session_id: session_id.clone(),
+            started_at: 1000,
+            ended_at: 2000,
+            text: "Hello world this is a test".to_string(),
+            source: SessionMode::Hold,
+            typed: false,
+        };
+        let entry2 = EntryCreate {
+            id: "entry-2".to_string(),
+            session_id: session_id.clone(),
+            started_at: 2000,
+            ended_at: 3000,
+            text: "Another entry with different content".to_string(),
+            source: SessionMode::Hold,
+            typed: false,
+        };
+
+        db.create_entry(entry1).unwrap();
+        db.create_entry(entry2).unwrap();
+
+        let results = db.search_entries("hello").unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].text.contains("Hello"));
+
+        let results2 = db.search_entries("world").unwrap();
+        assert_eq!(results2.len(), 1);
+
+        let results3 = db.search_entries("nonexistent").unwrap();
+        assert!(results3.is_empty());
+    }
+
+    #[test]
+    fn test_fts5_search_multiple_words() {
+        let db = Database::new_in_memory().unwrap();
+        let session_id = "test-session-1".to_string();
+        let session_create = SessionCreate {
+            id: session_id.clone(),
+            mode: SessionMode::Hold,
+            started_at: 1000,
+            language: Some("en".to_string()),
+            model_profile: "base".to_string(),
+            translated: false,
+            app_name: None,
+        };
+        db.create_session(session_create).unwrap();
+
+        let entry = EntryCreate {
+            id: "entry-1".to_string(),
+            session_id: session_id.clone(),
+            started_at: 1000,
+            ended_at: 2000,
+            text: "The quick brown fox jumps".to_string(),
+            source: SessionMode::Hold,
+            typed: false,
+        };
+        db.create_entry(entry).unwrap();
+
+        let results = db.search_entries("quick brown").unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn test_fts5_search_after_update() {
+        let db = Database::new_in_memory().unwrap();
+        let session_id = "test-session-1".to_string();
+        let session_create = SessionCreate {
+            id: session_id.clone(),
+            mode: SessionMode::Hold,
+            started_at: 1000,
+            language: Some("en".to_string()),
+            model_profile: "base".to_string(),
+            translated: false,
+            app_name: None,
+        };
+        db.create_session(session_create).unwrap();
+
+        let entry_id = "entry-1".to_string();
+        let entry_create = EntryCreate {
+            id: entry_id.clone(),
+            session_id: session_id.clone(),
+            started_at: 1000,
+            ended_at: 2000,
+            text: "First entry text".to_string(),
+            source: SessionMode::Hold,
+            typed: false,
+        };
+        db.create_entry(entry_create).unwrap();
+
+        let entry_id2 = "entry-2".to_string();
+        let entry_create2 = EntryCreate {
+            id: entry_id2.clone(),
+            session_id: session_id.clone(),
+            started_at: 2000,
+            ended_at: 3000,
+            text: "Second entry text".to_string(),
+            source: SessionMode::Hold,
+            typed: false,
+        };
+        db.create_entry(entry_create2).unwrap();
+
+        let results = db.search_entries("second").unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].text.contains("Second"));
+    }
+
+    #[test]
+    fn test_fts5_search_after_delete() {
+        let db = Database::new_in_memory().unwrap();
+        let session_id = "test-session-1".to_string();
+        let session_create = SessionCreate {
+            id: session_id.clone(),
+            mode: SessionMode::Hold,
+            started_at: 1000,
+            language: Some("en".to_string()),
+            model_profile: "base".to_string(),
+            translated: false,
+            app_name: None,
+        };
+        db.create_session(session_create).unwrap();
+
+        let entry_id = "entry-1".to_string();
+        let entry_create = EntryCreate {
+            id: entry_id.clone(),
+            session_id: session_id.clone(),
+            started_at: 1000,
+            ended_at: 2000,
+            text: "Searchable content".to_string(),
+            source: SessionMode::Hold,
+            typed: false,
+        };
+        db.create_entry(entry_create).unwrap();
+
+        let results_before = db.search_entries("searchable").unwrap();
+        assert_eq!(results_before.len(), 1);
+
+        let deleted = db.delete_entry(&entry_id).unwrap();
+        assert!(deleted);
+    }
+
+    #[test]
+    fn test_timestamps() {
+        let db = Database::new_in_memory().unwrap();
+        let session_id = "session-timestamp".to_string();
+        let session_create = SessionCreate {
+            id: session_id.clone(),
+            mode: SessionMode::Hold,
+            started_at: 1609459200000,
+            language: None,
+            model_profile: "base".to_string(),
+            translated: false,
+            app_name: None,
+        };
+        db.create_session(session_create).unwrap();
+
+        let session = db.get_session(&session_id).unwrap().unwrap();
+        assert_eq!(session.started_at, 1609459200000);
+
+        let entry_create = EntryCreate {
+            id: "entry-timestamp".to_string(),
+            session_id: session_id.clone(),
+            started_at: 1609459200000,
+            ended_at: 1609459260000,
+            text: "Test".to_string(),
+            source: SessionMode::Hold,
+            typed: false,
+        };
+        db.create_entry(entry_create).unwrap();
+
+        let entry = db.get_entry("entry-timestamp").unwrap().unwrap();
+        assert_eq!(entry.started_at, 1609459200000);
+        assert_eq!(entry.ended_at, 1609459260000);
+    }
+
+    #[test]
+    fn test_word_char_counts() {
+        let db = Database::new_in_memory().unwrap();
+        let session_id = "test-session-1".to_string();
+        let session_create = SessionCreate {
+            id: session_id.clone(),
+            mode: SessionMode::Hold,
+            started_at: 1000,
+            language: Some("en".to_string()),
+            model_profile: "base".to_string(),
+            translated: false,
+            app_name: None,
+        };
+        db.create_session(session_create).unwrap();
+
+        let text = "Hello world this is a test message";
+        let words = count_words(text);
+        let chars = count_chars(text);
+
+        assert_eq!(words, 7);
+        assert_eq!(chars, text.len() as i64);
+
+        let entry = EntryCreate {
+            id: "entry-counts".to_string(),
+            session_id: session_id.clone(),
+            started_at: 1000,
+            ended_at: 2000,
+            text: text.to_string(),
+            source: SessionMode::Hold,
+            typed: false,
+        };
+        db.create_entry(entry).unwrap();
+
+        db.update_session(&session_id, None, Some(chars), Some(words))
+            .unwrap()
+            .unwrap();
+
+        let session = db.get_session(&session_id).unwrap().unwrap();
+        assert_eq!(session.chars_count, chars);
+        assert_eq!(session.words_count, words);
+    }
+
+    #[test]
+    fn test_migration_creates_tables() {
+        let db = Database::new_in_memory().unwrap();
+
+        let session_create = create_test_session();
+        db.create_session(session_create.clone()).unwrap();
+
+        let entry_create = create_test_entry(&session_create.id);
+        db.create_entry(entry_create).unwrap();
+
+        let sessions = db.get_all_sessions().unwrap();
+        assert_eq!(sessions.len(), 1);
+
+        let entries = db.get_all_entries().unwrap();
+        assert_eq!(entries.len(), 1);
+    }
+
+    #[test]
+    fn test_migration_creates_indexes() {
+        let db = Database::new_in_memory().unwrap();
+
+        let conn = db.conn.lock();
+        let mut stmt = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_sessions_started_at'")
+            .unwrap();
+        let result: Vec<String> = stmt
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        assert_eq!(result.len(), 1);
+
+        let mut stmt = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_entries_session_id'")
+            .unwrap();
+        let result: Vec<String> = stmt
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        assert_eq!(result.len(), 1);
+
+        let mut stmt = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_entries_started_at'")
+            .unwrap();
+        let result: Vec<String> = stmt
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_migration_creates_fts5_table() {
+        let db = Database::new_in_memory().unwrap();
+
+        let conn = db.conn.lock();
+        let mut stmt = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='entry_search'")
+            .unwrap();
+        let result: Vec<String> = stmt
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        assert_eq!(result.len(), 1);
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'entries_%'",
+            )
+            .unwrap();
+        let triggers: Vec<String> = stmt
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        assert!(triggers.len() >= 3);
+    }
+
+    #[test]
+    fn test_session_mode_serialization() {
+        let session = SessionCreate {
+            id: "mode-test".to_string(),
+            mode: SessionMode::Toggle,
+            started_at: 1000,
+            language: None,
+            model_profile: "base".to_string(),
+            translated: false,
+            app_name: None,
+        };
+
+        let db = Database::new_in_memory().unwrap();
+        let created = db.create_session(session).unwrap();
+        assert_eq!(created.mode, SessionMode::Toggle);
+
+        let retrieved = db.get_session("mode-test").unwrap().unwrap();
+        assert_eq!(retrieved.mode, SessionMode::Toggle);
+    }
+
+    #[test]
+    fn test_typed_field() {
+        let db = Database::new_in_memory().unwrap();
+        let session_create = create_test_session();
+        db.create_session(session_create.clone()).unwrap();
+
+        let entry = EntryCreate {
+            id: "typed-entry".to_string(),
+            session_id: session_create.id,
+            started_at: 1000,
+            ended_at: 2000,
+            text: "Typed content".to_string(),
+            source: SessionMode::Hold,
+            typed: true,
+        };
+        db.create_entry(entry.clone()).unwrap();
+
+        let retrieved = db.get_entry(&entry.id).unwrap().unwrap();
+        assert!(retrieved.typed);
+    }
+
+    #[test]
+    fn test_app_name_field() {
+        let session = SessionCreate {
+            id: "app-test".to_string(),
+            mode: SessionMode::Hold,
+            started_at: 1000,
+            language: None,
+            model_profile: "base".to_string(),
+            translated: false,
+            app_name: Some("Safari".to_string()),
+        };
+
+        let db = Database::new_in_memory().unwrap();
+        let created = db.create_session(session).unwrap();
+        assert_eq!(created.app_name, Some("Safari".to_string()));
+
+        let retrieved = db.get_session("app-test").unwrap().unwrap();
+        assert_eq!(retrieved.app_name, Some("Safari".to_string()));
+    }
+
+    #[test]
+    fn test_multiple_sessions_with_entries() {
+        let db = Database::new_in_memory().unwrap();
+
+        let session1_id = "session-1".to_string();
+        let session2_id = "session-2".to_string();
+
+        let session1 = SessionCreate {
+            id: session1_id.clone(),
+            mode: SessionMode::Hold,
+            started_at: 1000,
+            language: None,
+            model_profile: "base".to_string(),
+            translated: false,
+            app_name: None,
+        };
+        let session2 = SessionCreate {
+            id: session2_id.clone(),
+            mode: SessionMode::Toggle,
+            started_at: 2000,
+            language: None,
+            model_profile: "base".to_string(),
+            translated: false,
+            app_name: None,
+        };
+
+        db.create_session(session1).unwrap();
+        db.create_session(session2).unwrap();
+
+        db.create_entry(EntryCreate {
+            id: "e1".to_string(),
+            session_id: session1_id.clone(),
+            started_at: 1000,
+            ended_at: 2000,
+            text: "Session 1 entry".to_string(),
+            source: SessionMode::Hold,
+            typed: false,
+        })
+        .unwrap();
+
+        db.create_entry(EntryCreate {
+            id: "e2".to_string(),
+            session_id: session2_id.clone(),
+            started_at: 2000,
+            ended_at: 3000,
+            text: "Session 2 entry".to_string(),
+            source: SessionMode::Toggle,
+            typed: false,
+        })
+        .unwrap();
+
+        let entries1 = db.get_entries_by_session(&session1_id).unwrap();
+        let entries2 = db.get_entries_by_session(&session2_id).unwrap();
+
+        assert_eq!(entries1.len(), 1);
+        assert_eq!(entries2.len(), 1);
+        assert!(entries1[0].text.contains("Session 1"));
+        assert!(entries2[0].text.contains("Session 2"));
+    }
+
+    #[test]
+    fn test_translated_field() {
+        let session = SessionCreate {
+            id: "translated-test".to_string(),
+            mode: SessionMode::Hold,
+            started_at: 1000,
+            language: Some("es".to_string()),
+            model_profile: "base".to_string(),
+            translated: true,
+            app_name: None,
+        };
+
+        let db = Database::new_in_memory().unwrap();
+        let created = db.create_session(session).unwrap();
+        assert!(created.translated);
+
+        let retrieved = db.get_session("translated-test").unwrap().unwrap();
+        assert!(retrieved.translated);
+    }
+
+    #[test]
+    fn test_idempotent_migrations() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let session_create = create_test_session();
+        db.create_session(session_create).unwrap();
+
+        let sessions = db.get_all_sessions().unwrap();
+        assert_eq!(sessions.len(), 1);
+    }
 }
