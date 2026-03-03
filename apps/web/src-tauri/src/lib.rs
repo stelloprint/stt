@@ -9,6 +9,7 @@ use prefs::{Preferences, Prefs};
 use std::sync::Arc;
 use type_::{TypeMethod, TypeOptions, Typer};
 use stt::{SttEngine, TranscriptionResult};
+use type_::{ContextHeuristic, TypeMethod, TypeOptions, Typer};
 
 pub struct AppState {
     pub prefs: Arc<Prefs>,

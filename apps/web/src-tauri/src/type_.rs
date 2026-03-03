@@ -15,11 +15,26 @@ pub enum TypeMethod {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContextHeuristic {
+    None,
+    CodeBlock,
+    PasswordField,
+}
+
+impl Default for ContextHeuristic {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TypeOptions {
     pub method: TypeMethod,
     pub throttle_ms: u64,
     pub newline_append: bool,
     pub clipboard_fallback: bool,
+    pub detect_code_context: bool,
+    pub detect_password_fields: bool,
 }
 
 impl Default for TypeOptions {
@@ -29,6 +44,8 @@ impl Default for TypeOptions {
             throttle_ms: 0,
             newline_append: false,
             clipboard_fallback: true,
+            detect_code_context: true,
+            detect_password_fields: true,
         }
     }
 }
@@ -196,6 +213,11 @@ impl Typer {
     }
 
     pub fn type_text(&self, text: &str) -> Result<(), String> {
+        let context = self.detect_context(text);
+        if context == ContextHeuristic::PasswordField {
+            return Err("Skipping typing in password field".to_string());
+        }
+
         let mut text = text.to_string();
 
         if self.options.newline_append && !text.ends_with('\n') {
@@ -225,6 +247,185 @@ impl Typer {
     pub fn get_options(&self) -> TypeOptions {
         self.options
     }
+
+    fn detect_context(&self, text: &str) -> ContextHeuristic {
+        if !self.options.detect_code_context && !self.options.detect_password_fields {
+            return ContextHeuristic::None;
+        }
+
+        let code_indicators = [
+            "```",
+            "``",
+            "`",
+            "fn ",
+            "func ",
+            "def ",
+            "class ",
+            "const ",
+            "let ",
+            "var ",
+            "import ",
+            "export ",
+            "return ",
+            "if ",
+            "else ",
+            "for ",
+            "while ",
+            "match ",
+            "pub ",
+            "struct ",
+            "enum ",
+            "impl ",
+            "trait ",
+            "type ",
+            "interface ",
+            "=>",
+            "->",
+            "::",
+            "&&",
+            "||",
+            "==",
+            "!=",
+            "===",
+            "!==",
+        ];
+
+        let first_line = text.lines().next().unwrap_or("").trim();
+        let code_score: usize = code_indicators
+            .iter()
+            .filter(|&ind| text.contains(ind) || first_line.starts_with(ind))
+            .count();
+
+        let has_braces = text.contains('{') && text.contains('}');
+        let has_brackets = text.contains('[') && text.contains(']');
+        let has_parens = text.contains('(') && text.contains(')');
+        let has_semicolons = text.contains(';');
+        let indented_lines = text.lines().filter(|l| l.starts_with("    ")).count();
+        let total_lines = text.lines().count();
+
+        let is_code = code_score >= 2
+            || (has_braces && has_semicolons)
+            || (indented_lines > 2 && total_lines > 3)
+            || (has_brackets && has_parens && text.contains(','));
+
+        if is_code && self.options.detect_code_context {
+            return ContextHeuristic::CodeBlock;
+        }
+
+        if self.options.detect_password_fields {
+            let lower = text.to_lowercase();
+            if lower.contains("password") || lower.contains("passwd") || lower.contains("secret") {
+                return ContextHeuristic::PasswordField;
+            }
+
+            let masked_chars = text
+                .chars()
+                .filter(|&c| c == '•' || c == '*' || c == '•')
+                .count();
+            if masked_chars > 3 {
+                return ContextHeuristic::PasswordField;
+            }
+        }
+
+        ContextHeuristic::None
+    }
+
+    pub fn detect_context_for_options(options: &TypeOptions, text: &str) -> ContextHeuristic {
+        if !options.detect_code_context && !options.detect_password_fields {
+            return ContextHeuristic::None;
+        }
+
+        let code_indicators = [
+            "```",
+            "``",
+            "`",
+            "fn ",
+            "func ",
+            "def ",
+            "class ",
+            "const ",
+            "let ",
+            "var ",
+            "import ",
+            "export ",
+            "return ",
+            "if ",
+            "else ",
+            "for ",
+            "while ",
+            "match ",
+            "pub ",
+            "struct ",
+            "enum ",
+            "impl ",
+            "trait ",
+            "type ",
+            "interface ",
+            "=>",
+            "->",
+            "::",
+            "&&",
+            "||",
+            "==",
+            "!=",
+            "===",
+            "!==",
+        ];
+
+        let first_line = text.lines().next().unwrap_or("").trim();
+        let code_score: usize = code_indicators
+            .iter()
+            .filter(|&ind| text.contains(ind) || first_line.starts_with(ind))
+            .count();
+
+        let has_braces = text.contains('{') && text.contains('}');
+        let has_brackets = text.contains('[') && text.contains(']');
+        let has_parens = text.contains('(') && text.contains(')');
+        let has_semicolons = text.contains(';');
+        let indented_lines = text.lines().filter(|l| l.starts_with("    ")).count();
+        let total_lines = text.lines().count();
+
+        let is_code = code_score >= 2
+            || (has_braces && has_semicolons)
+            || (indented_lines > 2 && total_lines > 3)
+            || (has_brackets && has_parens && text.contains(','));
+
+        if is_code && options.detect_code_context {
+            return ContextHeuristic::CodeBlock;
+        }
+
+        if options.detect_password_fields {
+            let lower = text.to_lowercase();
+            if lower.contains("password") || lower.contains("passwd") || lower.contains("secret") {
+                return ContextHeuristic::PasswordField;
+            }
+
+            let masked_chars = text
+                .chars()
+                .filter(|&c| c == '•' || c == '*' || c == '•')
+                .count();
+            if masked_chars > 3 {
+                return ContextHeuristic::PasswordField;
+            }
+        }
+
+        ContextHeuristic::None
+    }
+
+    pub fn should_type_for_options(options: &TypeOptions, text: &str) -> bool {
+        match Self::detect_context_for_options(options, text) {
+            ContextHeuristic::PasswordField => false,
+            _ => true,
+        }
+    }
+
+    pub fn should_type(&self, text: &str) -> bool {
+        Self::should_type_for_options(&self.options, text)
+    }
+
+    pub fn get_context(&self, text: &str) -> ContextHeuristic {
+        Self::detect_context_for_options(&self.options, text)
+    }
 }
 
 #[cfg(test)]
@@ -238,6 +439,8 @@ mod tests {
         assert_eq!(options.throttle_ms, 0);
         assert!(!options.newline_append);
         assert!(options.clipboard_fallback);
+        assert!(options.detect_code_context);
+        assert!(options.detect_password_fields);
     }
 
     #[test]
@@ -247,6 +450,8 @@ mod tests {
             throttle_ms: 10,
             newline_append: true,
             clipboard_fallback: false,
+            detect_code_context: false,
+            detect_password_fields: false,
         };
         assert_eq!(options.method, TypeMethod::Clipboard);
         assert_eq!(options.throttle_ms, 10);
@@ -315,6 +520,8 @@ mod tests {
             throttle_ms: 50,
             newline_append: false,
             clipboard_fallback: true,
+            detect_code_context: true,
+            detect_password_fields: true,
         };
         assert_eq!(options.method, TypeMethod::Keystroke);
         assert_eq!(options.throttle_ms, 50);
@@ -329,10 +536,88 @@ mod tests {
             throttle_ms: 0,
             newline_append: true,
             clipboard_fallback: false,
+            detect_code_context: false,
+            detect_password_fields: false,
         };
         assert_eq!(options.method, TypeMethod::Clipboard);
         assert_eq!(options.throttle_ms, 0);
         assert!(options.newline_append);
         assert!(!options.clipboard_fallback);
+    }
+
+    #[test]
+    fn test_context_heuristic_default() {
+        let ctx = ContextHeuristic::default();
+        assert_eq!(ctx, ContextHeuristic::None);
+    }
+
+    #[test]
+    fn test_context_heuristic_variants() {
+        assert_eq!(ContextHeuristic::None, ContextHeuristic::None);
+        assert_eq!(ContextHeuristic::CodeBlock, ContextHeuristic::CodeBlock);
+        assert_eq!(
+            ContextHeuristic::PasswordField,
+            ContextHeuristic::PasswordField
+        );
+    }
+
+    #[test]
+    fn test_detect_code_block_triple_backticks() {
+        let options = TypeOptions::default();
+        let ctx = Typer::detect_context_for_options(&options, "```javascript\nconst x = 1;\n```");
+        assert_eq!(ctx, ContextHeuristic::CodeBlock);
+    }
+
+    #[test]
+    fn test_detect_code_block_with_function() {
+        let options = TypeOptions::default();
+        let ctx =
+            Typer::detect_context_for_options(&options, "function hello() {\n  return 'world';\n}");
+        assert_eq!(ctx, ContextHeuristic::CodeBlock);
+    }
+
+    #[test]
+    fn test_detect_password_field() {
+        let options = TypeOptions::default();
+        let ctx = Typer::detect_context_for_options(&options, "My password is secret");
+        assert_eq!(ctx, ContextHeuristic::PasswordField);
+    }
+
+    #[test]
+    fn test_detect_password_field_passwd() {
+        let options = TypeOptions::default();
+        let ctx = Typer::detect_context_for_options(&options, "Enter your passwd here");
+        assert_eq!(ctx, ContextHeuristic::PasswordField);
+    }
+
+    #[test]
+    fn test_normal_text_returns_none() {
+        let options = TypeOptions::default();
+        let ctx =
+            Typer::detect_context_for_options(&options, "Hello world this is some normal text");
+        assert_eq!(ctx, ContextHeuristic::None);
+    }
+
+    #[test]
+    fn test_should_type_password_field() {
+        let options = TypeOptions::default();
+        assert!(!Typer::should_type_for_options(&options, "password123"));
+    }
+
+    #[test]
+    fn test_should_type_normal_text() {
+        let options = TypeOptions::default();
+        assert!(Typer::should_type_for_options(&options, "Hello world"));
+    }
+
+    #[test]
+    fn test_context_detection_disabled() {
+        let options = TypeOptions {
+            detect_code_context: false,
+            detect_password_fields: false,
+            ..Default::default()
+        };
+        let ctx = Typer::detect_context_for_options(&options, "function test() { return 1; }");
+        assert_eq!(ctx, ContextHeuristic::None);
     }
 }
