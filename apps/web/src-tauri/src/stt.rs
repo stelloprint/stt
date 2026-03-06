@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::{fs, thread};
 
-use crate::prefs::{ModelProfile, Preferences};
+use crate::prefs::{ModelProfile, Preferences, VoiceCommandMap, VoiceCommands};
 use whisper_rs::{
     FullParams, SamplingStrategy, WhisperContext as WhisperCtx, WhisperContextParameters,
 };
@@ -282,4 +282,267 @@ fn compute_file_sha256(path: &PathBuf) -> Result<String> {
     hasher.update(&data);
     let result = hasher.finalize();
     Ok(hex::encode(result))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_whitespace_single_spaces() {
+        let input = "hello    world";
+        let result = normalize_whitespace(input);
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_normalize_whitespace_multiple_spaces() {
+        let input = "hello   world    test";
+        let result = normalize_whitespace(input);
+        assert_eq!(result, "hello world test");
+    }
+
+    #[test]
+    fn test_normalize_whitespace_tabs_newlines() {
+        let input = "hello\n\tworld\t test";
+        let result = normalize_whitespace(input);
+        assert_eq!(result, "hello world test");
+    }
+
+    #[test]
+    fn test_normalize_whitespace_trim() {
+        let input = "   hello world   ";
+        let result = normalize_whitespace(input);
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_normalize_whitespace_empty() {
+        let input = "";
+        let result = normalize_whitespace(input);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_normalize_whitespace_only_whitespace() {
+        let input = "   \n\t   ";
+        let result = normalize_whitespace(input);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_normalize_whitespace_preserves_internal_spaces() {
+        let input = "hello  world";
+        let result = normalize_whitespace(input);
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_apply_voice_commands_newline() {
+        let map = VoiceCommandMap {
+            newline: "newline".to_string(),
+            ..Default::default()
+        };
+        let input = "hello enter world";
+        let result = apply_voice_commands(input, &map);
+        assert!(result.contains('\n'));
+    }
+
+    #[test]
+    fn test_apply_voice_commands_tab() {
+        let map = VoiceCommandMap {
+            tab: "tab".to_string(),
+            ..Default::default()
+        };
+        let input = "hello tab world";
+        let result = apply_voice_commands(input, &map);
+        assert!(result.contains('\t'));
+    }
+
+    #[test]
+    fn test_apply_voice_commands_period() {
+        let map = VoiceCommandMap {
+            period: "period".to_string(),
+            ..Default::default()
+        };
+        let input = "hello period world";
+        let result = apply_voice_commands(input, &map);
+        assert!(result.contains('.'));
+    }
+
+    #[test]
+    fn test_apply_voice_commands_comma() {
+        let map = VoiceCommandMap {
+            comma: "comma".to_string(),
+            ..Default::default()
+        };
+        let input = "hello comma world";
+        let result = apply_voice_commands(input, &map);
+        assert!(result.contains(','));
+    }
+
+    #[test]
+    fn test_apply_voice_commands_colon() {
+        let map = VoiceCommandMap {
+            colon: "colon".to_string(),
+            ..Default::default()
+        };
+        let input = "hello colon world";
+        let result = apply_voice_commands(input, &map);
+        assert!(result.contains(':'));
+    }
+
+    #[test]
+    fn test_apply_voice_commands_semicolon() {
+        let map = VoiceCommandMap {
+            semicolon: "mysemi".to_string(),
+            ..Default::default()
+        };
+        let input = "hello mysemi world";
+        let result = apply_voice_commands(input, &map);
+        assert!(result.contains(';'));
+    }
+
+    #[test]
+    fn test_apply_voice_commands_open_quote() {
+        let map = VoiceCommandMap {
+            open_quote: "open quote".to_string(),
+            ..Default::default()
+        };
+        let input = "open quote hello";
+        let result = apply_voice_commands(input, &map);
+        assert!(result.contains('"'));
+    }
+
+    #[test]
+    fn test_apply_voice_commands_close_quote() {
+        let map = VoiceCommandMap {
+            close_quote: "close quote".to_string(),
+            ..Default::default()
+        };
+        let input = "hello close quote";
+        let result = apply_voice_commands(input, &map);
+        assert!(result.contains('"'));
+    }
+
+    #[test]
+    fn test_apply_voice_commands_backtick() {
+        let map = VoiceCommandMap {
+            backtick: "backtick".to_string(),
+            ..Default::default()
+        };
+        let input = "hello backtick world";
+        let result = apply_voice_commands(input, &map);
+        assert!(result.contains('`'));
+    }
+
+    #[test]
+    fn test_apply_voice_commands_code_block() {
+        let map = VoiceCommandMap {
+            code_block: "code block".to_string(),
+            ..Default::default()
+        };
+        let input = "code block hello world code block";
+        let result = apply_voice_commands(input, &map);
+        assert!(result.contains("```"));
+    }
+
+    #[test]
+    fn test_apply_voice_commands_case_insensitive() {
+        let map = VoiceCommandMap {
+            tab: "tab".to_string(),
+            ..Default::default()
+        };
+        let input = "hello tab world";
+        let result = apply_voice_commands(input, &map);
+        assert!(result.contains('\t'));
+    }
+
+    #[test]
+    fn test_post_process_text_disabled() {
+        let prefs = Preferences {
+            voice_commands: VoiceCommands {
+                enabled: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let input = "hello   world";
+        let result = post_process_text(input, &prefs);
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_post_process_text_enabled() {
+        let prefs = Preferences {
+            voice_commands: VoiceCommands {
+                enabled: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let input = "hello enter world";
+        let result = post_process_text(input, &prefs);
+        assert!(result.contains('\n'));
+    }
+
+    #[test]
+    fn test_post_process_text_normalizes_first() {
+        let prefs = Preferences {
+            voice_commands: VoiceCommands {
+                enabled: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let input = "hello   enter   world";
+        let result = post_process_text(input, &prefs);
+        assert!(result.contains('\n'));
+    }
+
+    #[test]
+    fn test_apply_voice_commands_empty() {
+        let map = VoiceCommandMap::default();
+        let input = "hello world";
+        let result = apply_voice_commands(input, &map);
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_apply_voice_commands_new_paragraph() {
+        let map = VoiceCommandMap {
+            new_paragraph: "new paragraph".to_string(),
+            ..Default::default()
+        };
+        let input = "hello new paragraph world";
+        let result = apply_voice_commands(input, &map);
+        assert!(result.contains("\n\n"));
+    }
+
+    #[test]
+    fn test_normalize_whitespace_special_characters() {
+        let input = "hello\u{2003}world";
+        let result = normalize_whitespace(input);
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_apply_voice_commands_multiple_commands() {
+        let map = VoiceCommandMap::default();
+        let input = "enter tab period";
+        let result = apply_voice_commands(input, &map);
+        assert!(result.contains('\n'));
+        assert!(result.contains('\t'));
+        assert!(result.contains('.'));
+    }
+
+    #[test]
+    fn test_apply_voice_commands_preserves_text() {
+        let map = VoiceCommandMap::default();
+        let input = "actual speech text";
+        let result = apply_voice_commands(input, &map);
+        assert!(result.contains("actual"));
+        assert!(result.contains("speech"));
+        assert!(result.contains("text"));
+    }
 }
