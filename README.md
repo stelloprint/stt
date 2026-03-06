@@ -15,6 +15,34 @@ Offline push-to-talk speech-to-text for macOS that types directly into any app. 
 - Transcribed text is normalized, mapped for voice commands, and typed into the active macOS app (clipboard fallback for secure fields).
 - Sessions and transcripts are stored locally in SQLite with full-text search for later review or export.
 
+## Typical Workflow Sequence
+
+```mermaid
+sequenceDiagram
+    actor U as User
+    participant Keys as keys.rs
+    participant Audio as audio.rs
+    participant STT as stt.rs / whisper-rs
+    participant Cmds as Voice Command Mapper
+    participant Typist as typer.rs
+    participant App as Frontmost App
+    participant DB as SQLite (rusqlite)
+
+    U->>Keys: Press Cmd+Opt chord
+    Keys->>Audio: Start capture session
+    Audio-->>Keys: Silence/VAD updates
+    Audio->>STT: 16 kHz PCM frames
+    STT->>Cmds: Transcribed tokens
+    Cmds->>Typist: Normalized text + control actions
+    Typist->>App: Type keystrokes or paste fallback
+    Typist->>DB: Append typed entry metadata
+    STT->>DB: Persist transcript chunk
+    Keys->>Audio: Stop on release/silence timeout
+    Audio->>STT: Final audio chunk
+    STT->>Typist: Final text batch
+    Typist->>App: Final output
+```
+
 ## Stack Overview
 
 - **Tauri v2** bridges a React UI with a Rust core while enforcing a no-network security posture.
@@ -22,6 +50,47 @@ Offline push-to-talk speech-to-text for macOS that types directly into any app. 
 - **SQLite (rusqlite + FTS5)** stores sessions, entries, and indexes for local search and export.
 - **React + TanStack Router/Table** power the desktop UI for status, logs, settings, and long-form recording.
 - **Whisper Models** are user-supplied GGML/GGUF files verified locally by SHA-256 before use.
+
+## Architecture
+
+```mermaid
+graph TD
+    User((User))
+    subgraph "macOS Services"
+        Hotkeys[keys.rs<br/>Modifier Detector]
+        Audio[audio.rs<br/>Mic Capture + VAD]
+        Typist[typer.rs<br/>Keystroke Synthesizer]
+    end
+    subgraph "Tauri App"
+        subgraph "Rust Core"
+            Prefs[prefs.rs<br/>Config I/O]
+            STT[stt.rs<br/>whisper-rs]
+            DB[rusqlite<br/>FTS Store]
+        end
+        subgraph "React UI"
+            HUD[HUD / Logs / Settings]
+        end
+    end
+    Whisper[whisper.cpp model]
+    FrontApp[Frontmost macOS App]
+    Storage[(SQLite DB)]
+
+    User -->|Hold/Toggle Hotkey| Hotkeys
+    Hotkeys -->|Start Capture| Audio
+    Audio -->|PCM Frames| STT
+    STT -->|Tokens & Text| Typist
+    Typist -->|Keystrokes| FrontApp
+    STT -->|Sessions & Entries| DB
+    Prefs --> STT
+    Prefs --> HUD
+    DB --> HUD
+    STT --> Whisper
+    Whisper --> STT
+    Hotkeys --> HUD
+    Typist -->|Clipboard Fallback| FrontApp
+    DB --> Storage
+    Storage --> DB
+```
 
 ## Development Notes
 
@@ -61,12 +130,32 @@ bun run dev
 
 Open [http://localhost:3001](http://localhost:3001) in your browser to see the web application.
 
-## Project Structure
+## Directory Structure
 
 ```
-stt/
+stt/                         # Turborepo monorepo
 ├── apps/
-│   ├── web/         # Frontend application (React + TanStack Router)
+│   └── web/                 # React UI (TanStack Router)
+│       ├── src/
+│       │   ├── main.tsx
+│       │   ├── routes/     # /, /logs, /settings, /record
+│       │   ├── components/ # LogTable, ExportDialog, HUD
+│       │   └── lib/        # client utils (formatters)
+│       ├── src-tauri/
+│       │   ├── src/
+│       │   │   ├── main.rs # tauri entry; commands wiring
+│       │   │   └── lib.rs  # module declarations
+│       │   ├── Cargo.toml
+│       │   └── tauri.conf.json
+│       └── package.json
+├── packages/
+│   ├── config/              # shared config types/utilities
+│   └── env/                 # environment variables/types
+├── .gitignore
+├── package.json
+├── tsconfig.json
+├── turbo.json
+└── biome.json
 ```
 
 ## Available Scripts

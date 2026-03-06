@@ -2,34 +2,6 @@
 
 This is a Speech-To-Text app for local and secure use on MacOS without sending data to third parties.
 
-## Directory Structure
-
-```
-stt/                         # Turborepo monorepo
-├── apps/
-│   └── web/                 # React UI (TanStack Router)
-│       ├── src/
-│       │   ├── main.tsx
-│       │   ├── routes/     # /, /logs, /settings, /record
-│       │   ├── components/ # LogTable, ExportDialog, HUD
-│       │   └── lib/        # client utils (formatters)
-│       ├── src-tauri/
-│       │   ├── src/
-│       │   │   ├── main.rs # tauri entry; commands wiring
-│       │   │   └── lib.rs  # module declarations
-│       │   ├── Cargo.toml
-│       │   └── tauri.conf.json
-│       └── package.json
-├── packages/
-│   ├── config/              # shared config types/utilities
-│   └── env/                 # environment variables/types
-├── .gitignore
-├── package.json
-├── tsconfig.json
-├── turbo.json
-└── biome.json
-```
-
 ## Development Commands
 
 Bun is the package manager and runtime for this project. Refer to `package.json` for supported scripts.
@@ -41,6 +13,14 @@ Most formatting and common issues are automatically fixed. Run `bun run fix` bef
 ## Issue Tracking
 
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started or the *tracking-issues* skill.
+
+## Workflow
+1. Get assigned to an issue or check for ready work: `bd ready`
+2. Claim an issue: `bd update <id> --status=in_progress`
+3. Do the work
+4. Wait for human review
+5. Upon approval, commit changs and mark complete: `bd close <id>`
+6. Sync: `bd sync` (or let git hooks handle it)
 
 ### Landing the Plane (Session Completion)
 
