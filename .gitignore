@@ -51,3 +51,4 @@ temp
 
 # Agent Worktrees
 .agents/worktrees/*
+.agents/worktrees/
