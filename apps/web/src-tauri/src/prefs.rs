@@ -19,9 +19,6 @@ pub enum PrefsError {
 }
 
 pub fn validate_preferences(prefs: &Preferences) -> Result<(), PrefsError> {
-    if prefs.hotkeys.left_chord && prefs.hotkeys.right_chord {
-        return Ok(());
-    }
     if !prefs.hotkeys.left_chord && !prefs.hotkeys.right_chord {
         return Err(PrefsError::Validation(
             "At least one hotkey must be enabled".to_string(),
@@ -143,6 +140,7 @@ impl Default for TypingPrefs {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct VoiceCommandMap {
     pub newline: String,
     pub new_paragraph: String,
@@ -178,6 +176,7 @@ impl Default for VoiceCommandMap {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct VoiceCommands {
     pub enabled: bool,
+    #[serde(default)]
     pub map: VoiceCommandMap,
 }
 
@@ -279,6 +278,7 @@ impl Prefs {
     }
 
     pub fn update(&self, prefs: Preferences) -> Result<(), PrefsError> {
+        validate_preferences(&prefs)?;
         *self.inner.write() = prefs;
         self.save()?;
         Ok(())

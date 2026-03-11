@@ -325,7 +325,7 @@ function SettingsComponent() {
 									<Input
 										defaultValue={prefs.typing.throttle_ms}
 										id="throttle_ms"
-										max="500"
+										max="1000"
 										min="0"
 										name="throttle_ms"
 										type="number"
@@ -512,7 +512,7 @@ function SettingsComponent() {
 									<Input
 										defaultValue={prefs.record.max_file_gb}
 										id="max_file_gb"
-										max="32"
+										max="16"
 										min="1"
 										name="max_file_gb"
 										type="number"
