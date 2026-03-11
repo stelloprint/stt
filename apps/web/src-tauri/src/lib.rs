@@ -11,8 +11,10 @@ use db::{Database, Entry, EntryCreate, Session, SessionCreate};
 use keys::{ActivationState, KeysHandle};
 use parking_lot::RwLock;
 use permissions::{PermissionState, Permissions};
-use prefs::{Preferences, Prefs};
+use prefs::{ActivationMode, Preferences, Prefs};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::thread;
 use stt::{SttEngine, TranscriptionResult};
 use type_::{ContextHeuristic, TypeMethod, TypeOptions, Typer};
 
@@ -238,45 +240,160 @@ pub fn run() {
             let stt = Arc::clone(&stt_engine);
             let prefs = Arc::clone(&prefs);
             let db = Arc::clone(&db);
+            let toggle_active = Arc::new(AtomicBool::new(false));
 
-            k.on_activation(move |state, _source| match state {
-                ActivationState::Active => {
-                    log::info!("Hotkey activated - starting audio capture");
-                    if let Err(e) = audio.start() {
-                        log::error!("Failed to start audio capture: {}", e);
+            let toggle_active_clone = Arc::clone(&toggle_active);
+            let audio_clone = Arc::clone(&audio);
+            let prefs_clone = Arc::clone(&prefs);
+            let stt_clone = Arc::clone(&stt_engine);
+
+            thread::spawn(move || loop {
+                thread::sleep(std::time::Duration::from_millis(100));
+
+                if toggle_active_clone.load(Ordering::SeqCst) && audio_clone.is_recording() {
+                    let silence_ms = audio_clone.get_silence_duration_ms();
+                    let prefs = prefs_clone.get();
+                    let silence_seconds = prefs.silence_seconds * 1000.0 as f32;
+
+                    if silence_ms > silence_seconds as u64 && silence_ms > 0 {
+                        log::info!("Silence timeout - stopping capture");
+                        if let Err(e) = audio_clone.stop() {
+                            log::error!("Failed to stop audio capture: {}", e);
+                        }
+
+                        let audio_data = audio_clone.get_buffer();
+                        if !audio_data.is_empty() {
+                            log::info!("Transcribing {} audio samples", audio_data.len());
+                            match stt_clone.transcribe(&audio_data, &prefs) {
+                                Ok(result) => {
+                                    log::info!("Transcription result: {}", result.text);
+                                    if !result.text.is_empty() {
+                                        match Typer::with_defaults() {
+                                            Ok(typer) => {
+                                                if let Err(e) = typer.type_text(&result.text) {
+                                                    log::error!("Failed to type text: {}", e);
+                                                }
+                                            }
+                                            Err(e) => {
+                                                log::error!("Failed to create typer: {}", e);
+                                            }
+                                        }
+                                    }
+                                    if let Err(e) = audio_clone.clear_buffer() {
+                                        log::error!("Failed to clear audio buffer: {}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    log::error!("Transcription failed: {}", e);
+                                }
+                            }
+                        }
+
+                        toggle_active_clone.store(false, Ordering::SeqCst);
                     }
                 }
-                ActivationState::Inactive => {
-                    log::info!("Hotkey released - stopping audio capture");
-                    if let Err(e) = audio.stop() {
-                        log::error!("Failed to stop audio capture: {}", e);
-                    }
+            });
 
-                    let audio_data = audio.get_buffer();
-                    if !audio_data.is_empty() {
-                        log::info!("Transcribing {} audio samples", audio_data.len());
-                        let prefs_clone = prefs.get();
-                        match stt.transcribe(&audio_data, &prefs_clone) {
-                            Ok(result) => {
-                                log::info!("Transcription result: {}", result.text);
-                                if !result.text.is_empty() {
-                                    match Typer::with_defaults() {
-                                        Ok(typer) => {
-                                            if let Err(e) = typer.type_text(&result.text) {
-                                                log::error!("Failed to type text: {}", e);
+            let toggle_active_for_callback = Arc::clone(&toggle_active);
+
+            k.on_activation(move |state, _source| {
+                let prefs = prefs.get();
+                let is_toggle = prefs.mode == ActivationMode::Toggle;
+                let toggle_active = toggle_active_for_callback.load(Ordering::SeqCst);
+
+                match state {
+                    ActivationState::Active => {
+                        if is_toggle {
+                            if !toggle_active {
+                                log::info!("Toggle mode: starting audio capture");
+                                if let Err(e) = audio.start() {
+                                    log::error!("Failed to start audio capture: {}", e);
+                                }
+                                toggle_active_for_callback.store(true, Ordering::SeqCst);
+                            } else {
+                                log::info!("Toggle mode: manual stop triggered");
+                                if let Err(e) = audio.stop() {
+                                    log::error!("Failed to stop audio capture: {}", e);
+                                }
+
+                                let audio_data = audio.get_buffer();
+                                if !audio_data.is_empty() {
+                                    log::info!("Transcribing {} audio samples", audio_data.len());
+                                    match stt.transcribe(&audio_data, &prefs) {
+                                        Ok(result) => {
+                                            log::info!("Transcription result: {}", result.text);
+                                            if !result.text.is_empty() {
+                                                match Typer::with_defaults() {
+                                                    Ok(typer) => {
+                                                        if let Err(e) =
+                                                            typer.type_text(&result.text)
+                                                        {
+                                                            log::error!(
+                                                                "Failed to type text: {}",
+                                                                e
+                                                            );
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        log::error!(
+                                                            "Failed to create typer: {}",
+                                                            e
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                            if let Err(e) = audio.clear_buffer() {
+                                                log::error!("Failed to clear audio buffer: {}", e);
                                             }
                                         }
                                         Err(e) => {
-                                            log::error!("Failed to create typer: {}", e);
+                                            log::error!("Transcription failed: {}", e);
                                         }
                                     }
                                 }
-                                if let Err(e) = audio.clear_buffer() {
-                                    log::error!("Failed to clear audio buffer: {}", e);
-                                }
+
+                                toggle_active_for_callback.store(false, Ordering::SeqCst);
                             }
-                            Err(e) => {
-                                log::error!("Transcription failed: {}", e);
+                        } else {
+                            log::info!("Hold mode: starting audio capture");
+                            if let Err(e) = audio.start() {
+                                log::error!("Failed to start audio capture: {}", e);
+                            }
+                        }
+                    }
+                    ActivationState::Inactive => {
+                        if !is_toggle {
+                            log::info!("Hold mode: releasing - stopping capture");
+                            if let Err(e) = audio.stop() {
+                                log::error!("Failed to stop audio capture: {}", e);
+                            }
+
+                            let audio_data = audio.get_buffer();
+                            if !audio_data.is_empty() {
+                                log::info!("Transcribing {} audio samples", audio_data.len());
+                                match stt.transcribe(&audio_data, &prefs) {
+                                    Ok(result) => {
+                                        log::info!("Transcription result: {}", result.text);
+                                        if !result.text.is_empty() {
+                                            match Typer::with_defaults() {
+                                                Ok(typer) => {
+                                                    if let Err(e) = typer.type_text(&result.text) {
+                                                        log::error!("Failed to type text: {}", e);
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    log::error!("Failed to create typer: {}", e);
+                                                }
+                                            }
+                                        }
+                                        if let Err(e) = audio.clear_buffer() {
+                                            log::error!("Failed to clear audio buffer: {}", e);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::error!("Transcription failed: {}", e);
+                                    }
+                                }
                             }
                         }
                     }
