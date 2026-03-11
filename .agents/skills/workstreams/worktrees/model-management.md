@@ -1,6 +1,6 @@
 # Worktree: model-management
 
-**Plan Reference**: See [PLAN.md: Preferences & Files](../plan/SKILL.md#preferences--files), [PLAN.md: Whisper Integration](../plan/SKILL.md#whisper-integration), and [PLAN.md: UI](../plan/SKILL.md#ui-react--tanstack-router)
+**Plan Reference**: See [PLAN.md: Preferences & Files](../../plan/SKILL.md#preferences--files), [PLAN.md: Whisper Integration](../../plan/SKILL.md#whisper-integration), and [PLAN.md: UI](../../plan/SKILL.md#ui-react--tanstack-router)
 
 ## Purpose
 

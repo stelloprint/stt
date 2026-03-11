@@ -1,6 +1,6 @@
 # Worktree: typing-fallback
 
-**Plan Reference**: See [PLAN.md: Typing Output](../plan/SKILL.md#typing-output)
+**Plan Reference**: See [PLAN.md: Typing Output](../../plan/SKILL.md#typing-output)
 
 ## Purpose
 

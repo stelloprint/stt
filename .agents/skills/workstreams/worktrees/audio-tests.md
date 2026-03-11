@@ -1,6 +1,6 @@
 # Worktree: audio-tests
 
-**Plan Reference**: See [PLAN.md: Audio Capture & Silence](../plan/SKILL.md#audio-capture--silence-vad-lite)
+**Plan Reference**: See [PLAN.md: Audio Capture & Silence](../../plan/SKILL.md#audio-capture--silence-vad-lite)
 
 ## Purpose
 

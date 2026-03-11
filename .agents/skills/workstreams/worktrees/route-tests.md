@@ -1,6 +1,6 @@
 # Worktree: route-tests
 
-**Plan Reference**: See [PLAN.md: UI](../plan/SKILL.md#ui-react--tanstack-router)
+**Plan Reference**: See [PLAN.md: UI](../../plan/SKILL.md#ui-react--tanstack-router)
 
 ## Purpose
 

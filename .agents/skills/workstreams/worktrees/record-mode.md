@@ -1,6 +1,6 @@
 # Worktree: record-mode
 
-**Plan Reference**: See [PLAN.md: Record Mode Bounds](../plan/SKILL.md#record-mode-bounds), [PLAN.md: Audio Capture & Silence](../plan/SKILL.md#audio-capture--silence-vad-lite), and [PLAN.md: UI](../plan/SKILL.md#ui-react--tanstack-router)
+**Plan Reference**: See [PLAN.md: Record Mode Bounds](../../plan/SKILL.md#record-mode-bounds), [PLAN.md: Audio Capture & Silence](../../plan/SKILL.md#audio-capture--silence-vad-lite), and [PLAN.md: UI](../../plan/SKILL.md#ui-react--tanstack-router)
 
 ## Purpose
 

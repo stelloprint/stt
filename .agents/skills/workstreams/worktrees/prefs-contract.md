@@ -1,6 +1,6 @@
 # Worktree: prefs-contract
 
-**Plan Reference**: See [PLAN.md: Preferences & Files](../plan/SKILL.md#preferences--files)
+**Plan Reference**: See [PLAN.md: Preferences & Files](../../plan/SKILL.md#preferences--files)
 
 ## Purpose
 

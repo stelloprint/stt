@@ -1,6 +1,6 @@
 # Worktree: ptt-runtime
 
-**Plan Reference**: See [PLAN.md: Typical Workflow Sequence](../plan/SKILL.md#typical-workflow-sequence), [PLAN.md: Hotkeys](../plan/SKILL.md#hotkeys-modifiers-only-lr-aware), and [PLAN.md: Data Storage](../plan/SKILL.md#data-storage-sqlite)
+**Plan Reference**: See [PLAN.md: Typical Workflow Sequence](../../plan/SKILL.md#typical-workflow-sequence), [PLAN.md: Hotkeys](../../plan/SKILL.md#hotkeys-modifiers-only-lr-aware), and [PLAN.md: Data Storage](../../plan/SKILL.md#data-storage-sqlite)
 
 ## Purpose
 

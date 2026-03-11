@@ -1,6 +1,6 @@
 # Worktree: permissions-safety
 
-**Plan Reference**: See [PLAN.md: Permissions & Safety](../plan/SKILL.md#permissions--safety)
+**Plan Reference**: See [PLAN.md: Permissions & Safety](../../plan/SKILL.md#permissions--safety)
 
 ## Purpose
 

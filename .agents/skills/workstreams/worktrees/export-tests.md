@@ -1,6 +1,6 @@
 # Worktree: export-tests
 
-**Plan Reference**: See [PLAN.md: Export Format Details](../plan/SKILL.md#export-format-details)
+**Plan Reference**: See [PLAN.md: Export Format Details](../../plan/SKILL.md#export-format-details)
 
 ## Issue
 - **ID**: stt-xz0

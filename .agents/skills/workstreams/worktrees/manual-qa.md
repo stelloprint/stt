@@ -1,6 +1,6 @@
 # Worktree: manual-qa
 
-**Plan Reference**: See [PLAN.md: QA Checklist](../plan/SKILL.md#qa-checklist)
+**Plan Reference**: See [PLAN.md: QA Checklist](../../plan/SKILL.md#qa-checklist)
 
 ## Purpose
 

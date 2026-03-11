@@ -242,16 +242,16 @@ sequenceDiagram
 
 ## Implementation Tasks (Worktrees)
 
-See [.agents/skills/worktrees/SKILL.md](./worktrees/SKILL.md) for active workstreams and issue chains.
+See [.agents/skills/workstreams/SKILL.md](../workstreams/SKILL.md) for active workstreams and issue chains.
 
 | Worktree | Current Issue | Documentation |
 |----------|---------------|---------------|
-| audio-pipeline | [stt-rtf](./worktrees/audio-capture.md) | [audio-capture.md](./worktrees/audio-capture.md) |
-| session-persistence | [stt-3b0](./worktrees/session-persistence.md) | [session-persistence.md](./worktrees/session-persistence.md) |
-| model-tests | [stt-t00](./worktrees/model-tests.md) | [model-tests.md](./worktrees/model-tests.md) |
-| export-tests | [stt-xz0](./worktrees/export-tests.md) | [export-tests.md](./worktrees/export-tests.md) |
-| record-mode | stt-rtf → stt-bq4 (blocked) | [record-mode.md](./worktrees/record-mode.md) |
-| model-ui | stt-rtf → stt-j53 (blocked) | [model-ui.md](./worktrees/model-ui.md) |
+| audio-pipeline | [stt-rtf](../workstreams/audio-capture.md) | [audio-capture.md](../workstreams/audio-capture.md) |
+| session-persistence | [stt-3b0](../workstreams/session-persistence.md) | [session-persistence.md](../workstreams/session-persistence.md) |
+| model-tests | [stt-t00](../workstreams/model-tests.md) | [model-tests.md](../workstreams/model-tests.md) |
+| export-tests | [stt-xz0](../workstreams/export-tests.md) | [export-tests.md](../workstreams/export-tests.md) |
+| record-mode | stt-rtf → stt-bq4 (blocked) | [record-mode.md](../workstreams/record-mode.md) |
+| model-ui | stt-rtf → stt-j53 (blocked) | [model-ui.md](../workstreams/model-ui.md) |
 
 ## Export Format Details
 
@@ -275,7 +275,7 @@ The repo is initialized as a Turborepo monorepo with:
 - `apps/web/` - Tauri + React app (src-tauri embedded)
 - `packages/config/` - shared config package (placeholder)
 - `packages/env/` - env types package
-- `.agents/worktrees/` - workstream documentation (see [SKILL.md](./worktrees/SKILL.md))
+- `.agents/skills/workstreams/` - workstream documentation (see [SKILL.md](../workstreams/SKILL.md))
 
 ## After Push (Next Actions the Agent Can Implement)
 
@@ -283,11 +283,11 @@ Start work by entering a worktree and claiming the next ready issue:
 
 ```bash
 task.sh start audio-pipeline
-cd .agents/worktrees/audio-pipeline
+cd .agents/skills/workstreams
 bd ready
 ```
 
-See [.agents/skills/worktrees/SKILL.md](./worktrees/SKILL.md) for the full list of worktrees and their issue chains.
+See [.agents/skills/workstreams/SKILL.md](../workstreams/SKILL.md) for the full list of worktrees and their issue chains.
 
 ## QA Checklist
 
