@@ -130,6 +130,8 @@ export const api = {
 				words_count: wordsCount,
 			}),
 		delete: (id: string) => invoke<boolean>("delete_session", { id }),
+		start: (mode: string) => invoke<Session>("start_session", { mode }),
+		end: () => invoke<Session | null>("end_session"),
 	},
 
 	entries: {
@@ -142,5 +144,7 @@ export const api = {
 			invoke<Entry | null>("update_entry", { id, text, typed }),
 		delete: (id: string) => invoke<boolean>("delete_entry", { id }),
 		search: (query: string) => invoke<Entry[]>("search_entries", { query }),
+		addTyped: (text: string) => invoke<Entry>("add_typed_entry", { text }),
+		addUntyped: (text: string) => invoke<Entry>("add_untyped_entry", { text }),
 	},
 };

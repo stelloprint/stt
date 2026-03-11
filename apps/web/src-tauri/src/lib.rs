@@ -2,12 +2,14 @@ mod db;
 mod keys;
 mod permissions;
 mod prefs;
+mod session;
 mod stt;
 mod type_;
 
 use db::{Database, Entry, EntryCreate, Session, SessionCreate};
 use permissions::{PermissionState, Permissions};
 use prefs::{Preferences, Prefs};
+use session::SessionManager;
 use std::sync::Arc;
 use stt::{SttEngine, TranscriptionResult};
 use type_::{ContextHeuristic, TypeMethod, TypeOptions, Typer};
@@ -16,6 +18,7 @@ pub struct AppState {
     pub prefs: Arc<Prefs>,
     pub db: Arc<Database>,
     pub stt: Arc<SttEngine>,
+    pub session_manager: Arc<SessionManager>,
 }
 
 #[tauri::command]
@@ -203,6 +206,32 @@ fn get_frontmost_app_name() -> Option<String> {
     get_frontmost_app_name_internal()
 }
 
+#[tauri::command]
+fn start_session(state: tauri::State<'_, AppState>, mode: String) -> Result<Session, String> {
+    let session_mode = match mode.as_str() {
+        "hold" => db::SessionMode::Hold,
+        "toggle" => db::SessionMode::Toggle,
+        "record" => db::SessionMode::Record,
+        _ => return Err(format!("Unknown mode: {}", mode)),
+    };
+    session::create_session_workflow(&state, session_mode, None)
+}
+
+#[tauri::command]
+fn end_session(state: tauri::State<'_, AppState>) -> Result<Option<Session>, String> {
+    session::end_session_workflow(&state)
+}
+
+#[tauri::command]
+fn add_typed_entry(state: tauri::State<'_, AppState>, text: String) -> Result<Entry, String> {
+    session::add_typed_entry(&state, &text)
+}
+
+#[tauri::command]
+fn add_untyped_entry(state: tauri::State<'_, AppState>, text: String) -> Result<Entry, String> {
+    session::add_untyped_entry(&state, &text)
+}
+
 #[cfg(target_os = "macos")]
 fn get_frontmost_app_name_internal() -> Option<String> {
     use objc2::rc::autoreleasepool;
@@ -238,10 +267,13 @@ pub fn run() {
         }
     };
 
+    let session_manager = Arc::new(SessionManager::new(Arc::clone(&db)));
+
     let app_state = AppState {
         prefs,
         db,
         stt: Arc::new(SttEngine::new()),
+        session_manager,
     };
 
     tauri::Builder::default()
@@ -274,6 +306,10 @@ pub fn run() {
             open_microphone_settings,
             open_accessibility_settings,
             get_frontmost_app_name,
+            start_session,
+            end_session,
+            add_typed_entry,
+            add_untyped_entry,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
