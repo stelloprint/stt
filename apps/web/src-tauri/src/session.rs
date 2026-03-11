@@ -193,3 +193,62 @@ fn get_frontmost_app_name_internal() -> Option<String> {
 fn get_frontmost_app_name_internal() -> Option<String> {
     None
 }
+
+pub fn start_record_session(
+    state: &crate::AppState,
+    prefs: &crate::prefs::Preferences,
+) -> Result<crate::db::Session, String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis() as i64;
+
+    let session = crate::db::SessionCreate {
+        id: uuid_v4(),
+        mode: crate::db::SessionMode::Record,
+        started_at: now,
+        language: None,
+        model_profile: model_profile_to_string(&prefs.model_profile),
+        translated: prefs.translate_to_english,
+        app_name: None,
+    };
+
+    state.db.create_session(session).map_err(|e| e.to_string())
+}
+
+pub fn end_record_session(state: &crate::AppState) -> Result<Option<crate::db::Session>, String> {
+    let sessions = state.db.get_all_sessions().map_err(|e| e.to_string())?;
+
+    if let Some(session) = sessions
+        .into_iter()
+        .find(|s| s.mode == crate::db::SessionMode::Record && s.ended_at.is_none())
+    {
+        let entries = state
+            .db
+            .get_entries_by_session(&session.id)
+            .map_err(|e| e.to_string())?;
+
+        let total_chars: i64 = entries.iter().map(|e| count_chars(&e.text)).sum();
+        let total_words: i64 = entries.iter().map(|e| count_words(&e.text)).sum();
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| e.to_string())?
+            .as_millis() as i64;
+
+        let updated = state
+            .db
+            .update_session(&session.id, Some(now), Some(total_chars), Some(total_words))
+            .map_err(|e| e.to_string())?;
+
+        log::info!(
+            "Ended record session: {} with {} chars, {} words",
+            session.id,
+            total_chars,
+            total_words
+        );
+        Ok(updated)
+    } else {
+        Ok(None)
+    }
+}

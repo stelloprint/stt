@@ -1,4 +1,5 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -416,6 +417,351 @@ fn run_capture_loop(
 
 pub struct AudioHandle {
     capture: std::sync::Mutex<Option<AudioCapture>>,
+}
+
+pub fn get_transcripts_dir() -> std::io::Result<std::path::PathBuf> {
+    let proj_dirs = directories::ProjectDirs::from("com", "stt", "sst").ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "Failed to get app directory")
+    })?;
+
+    let transcripts_dir = proj_dirs.data_dir().join("transcripts");
+    std::fs::create_dir_all(&transcripts_dir)?;
+    Ok(transcripts_dir)
+}
+
+pub fn append_to_transcript_file(session_id: &str, text: &str) -> std::io::Result<()> {
+    let transcripts_dir = get_transcripts_dir()?;
+    let filename = format!("{}.txt", session_id);
+    let filepath = transcripts_dir.join(filename);
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let entry = format!("[{}] {}\n", timestamp, text);
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&filepath)?
+        .write_all(entry.as_bytes())?;
+
+    Ok(())
+}
+
+pub struct RecordCapture {
+    is_recording: std::sync::atomic::AtomicBool,
+    buffer: std::sync::RwLock<Vec<f32>>,
+    buffer_start_time: std::sync::RwLock<u64>,
+    chunk_duration_ms: u32,
+    running: std::sync::atomic::AtomicBool,
+    session_id: std::sync::RwLock<Option<String>>,
+    sample_rate: std::sync::RwLock<Option<u32>>,
+    device_sample_rate: u32,
+    input_channels: u16,
+}
+
+impl RecordCapture {
+    pub fn new(chunk_duration_ms: u32) -> Self {
+        Self {
+            is_recording: std::sync::atomic::AtomicBool::new(false),
+            buffer: std::sync::RwLock::new(Vec::new()),
+            buffer_start_time: std::sync::RwLock::new(0),
+            chunk_duration_ms,
+            running: std::sync::atomic::AtomicBool::new(false),
+            session_id: std::sync::RwLock::new(None),
+            sample_rate: std::sync::RwLock::new(None),
+            device_sample_rate: 44100,
+            input_channels: 1,
+        }
+    }
+
+    pub fn start(&self, session_id: String) -> Result<(), AudioError> {
+        if self
+            .is_recording
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            )
+            .is_err()
+        {
+            return Err(AudioError::AlreadyRunning);
+        }
+
+        self.buffer.write().unwrap().clear();
+        *self.session_id.write().unwrap() = Some(session_id);
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        *self.buffer_start_time.write().unwrap() = now;
+
+        self.running
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+
+        let buffer = Arc::new(std::sync::RwLock::new(Vec::<f32>::new()));
+        let buffer_start_time = Arc::new(std::sync::RwLock::new(now));
+        let is_recording = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let running = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let sample_rate = Arc::new(std::sync::RwLock::new(None::<u32>));
+
+        let device_sample_rate = self.device_sample_rate;
+        let input_channels = self.input_channels;
+        let chunk_duration_ms = self.chunk_duration_ms;
+
+        let this = self;
+        *buffer.write().unwrap() = this.buffer.read().unwrap().clone();
+
+        std::thread::spawn(move || {
+            if let Err(e) = run_record_capture_loop(
+                buffer,
+                buffer_start_time,
+                is_recording,
+                running,
+                sample_rate,
+                device_sample_rate,
+                input_channels,
+                chunk_duration_ms,
+            ) {
+                log::error!("Record capture error: {}", e);
+            }
+        });
+
+        Ok(())
+    }
+
+    pub fn stop(&self) -> Result<Vec<f32>, AudioError> {
+        if self
+            .is_recording
+            .compare_exchange(
+                true,
+                false,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            )
+            .is_err()
+        {
+            return Err(AudioError::NotStarted);
+        }
+
+        self.running
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+
+        let audio_data = self.buffer.read().unwrap().clone();
+        self.buffer.write().unwrap().clear();
+        *self.session_id.write().unwrap() = None;
+
+        Ok(audio_data)
+    }
+
+    pub fn is_recording(&self) -> bool {
+        self.is_recording.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub fn get_buffer(&self) -> Vec<f32> {
+        let sr = *self.sample_rate.read().unwrap();
+        let buf = self.buffer.read().unwrap().clone();
+        if let Some(device_sr) = sr {
+            if device_sr != TARGET_SAMPLE_RATE {
+                return resample_linear(&buf, device_sr, TARGET_SAMPLE_RATE);
+            }
+        }
+        buf
+    }
+
+    pub fn get_and_clear_chunk(&self) -> Option<(String, Vec<f32>, u64)> {
+        let session_id = self.session_id.read().unwrap().clone()?;
+        let sr = *self.sample_rate.read().unwrap();
+        let device_sr = sr.unwrap_or(TARGET_SAMPLE_RATE);
+
+        let mut buf = self.buffer.write().unwrap();
+        let audio_data = if device_sr != TARGET_SAMPLE_RATE {
+            resample_linear(&buf, device_sr, TARGET_SAMPLE_RATE)
+        } else {
+            buf.clone()
+        };
+        buf.clear();
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        *self.buffer_start_time.write().unwrap() = now;
+
+        if audio_data.is_empty() {
+            return None;
+        }
+
+        Some((session_id, audio_data, now))
+    }
+
+    pub fn get_sample_rate(&self) -> Option<u32> {
+        *self.sample_rate.read().unwrap()
+    }
+}
+
+fn run_record_capture_loop(
+    buffer: Arc<std::sync::RwLock<Vec<f32>>>,
+    buffer_start_time: Arc<std::sync::RwLock<u64>>,
+    is_recording: Arc<std::sync::atomic::AtomicBool>,
+    running: Arc<std::sync::atomic::AtomicBool>,
+    sample_rate: Arc<std::sync::RwLock<Option<u32>>>,
+    device_sample_rate: u32,
+    input_channels: u16,
+    _chunk_duration_ms: u32,
+) -> Result<(), AudioError> {
+    let host = cpal::default_host();
+    let device = host
+        .default_input_device()
+        .ok_or(AudioError::NoInputDevice)?;
+
+    let config = device
+        .default_input_config()
+        .map_err(|e| AudioError::DeviceError(e.to_string()))?;
+
+    let device_sr = config.sample_rate().0;
+    *sample_rate.write().unwrap() = Some(device_sr);
+
+    let use_resample = device_sr != TARGET_SAMPLE_RATE || config.channels() != TARGET_CHANNELS;
+
+    let err_fn = |err| log::error!("Record audio stream error: {}", err);
+
+    let stream = match config.sample_format() {
+        cpal::SampleFormat::F32 => {
+            let buffer = buffer.clone();
+            let buffer_start_time = buffer_start_time.clone();
+
+            let callback = move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                if !is_recording.load(std::sync::atomic::Ordering::SeqCst) {
+                    return;
+                }
+
+                let output = if use_resample {
+                    let mono: Vec<f32> = if input_channels > 1 {
+                        data.iter()
+                            .step_by(input_channels as usize)
+                            .copied()
+                            .collect()
+                    } else {
+                        data.to_vec()
+                    };
+                    resample_linear(&mono, device_sr, TARGET_SAMPLE_RATE)
+                } else if input_channels > 1 {
+                    data.iter()
+                        .step_by(input_channels as usize)
+                        .copied()
+                        .collect()
+                } else {
+                    data.to_vec()
+                };
+
+                if !output.is_empty() {
+                    buffer.write().unwrap().extend(output);
+                }
+            };
+            device.build_input_stream(&config.into(), callback, err_fn, None)
+        }
+        cpal::SampleFormat::I16 => {
+            let buffer = buffer.clone();
+            let buffer_start_time = buffer_start_time.clone();
+
+            let callback = move |data: &[i16], _: &cpal::InputCallbackInfo| {
+                if !is_recording.load(std::sync::atomic::Ordering::SeqCst) {
+                    return;
+                }
+
+                let data_f32: Vec<f32> = data.iter().map(|&s| s as f32 / i16::MAX as f32).collect();
+
+                let output = if use_resample {
+                    let mono: Vec<f32> = if input_channels > 1 {
+                        data_f32
+                            .iter()
+                            .step_by(input_channels as usize)
+                            .copied()
+                            .collect()
+                    } else {
+                        data_f32
+                    };
+                    resample_linear(&mono, device_sr, TARGET_SAMPLE_RATE)
+                } else if input_channels > 1 {
+                    data_f32
+                        .iter()
+                        .step_by(input_channels as usize)
+                        .copied()
+                        .collect()
+                } else {
+                    data_f32
+                };
+
+                if !output.is_empty() {
+                    buffer.write().unwrap().extend(output);
+                }
+            };
+            device.build_input_stream(&config.into(), callback, err_fn, None)
+        }
+        cpal::SampleFormat::U16 => {
+            let buffer = buffer.clone();
+            let buffer_start_time = buffer_start_time.clone();
+
+            let callback = move |data: &[u16], _: &cpal::InputCallbackInfo| {
+                if !is_recording.load(std::sync::atomic::Ordering::SeqCst) {
+                    return;
+                }
+
+                let data_f32: Vec<f32> = data
+                    .iter()
+                    .map(|&s| (s as f32 - 32768.0) / 32768.0)
+                    .collect();
+
+                let output = if use_resample {
+                    let mono: Vec<f32> = if input_channels > 1 {
+                        data_f32
+                            .iter()
+                            .step_by(input_channels as usize)
+                            .copied()
+                            .collect()
+                    } else {
+                        data_f32
+                    };
+                    resample_linear(&mono, device_sr, TARGET_SAMPLE_RATE)
+                } else if input_channels > 1 {
+                    data_f32
+                        .iter()
+                        .step_by(input_channels as usize)
+                        .copied()
+                        .collect()
+                } else {
+                    data_f32
+                };
+
+                if !output.is_empty() {
+                    buffer.write().unwrap().extend(output);
+                }
+            };
+            device.build_input_stream(&config.into(), callback, err_fn, None)
+        }
+        _ => {
+            return Err(AudioError::StreamError(
+                "Unsupported sample format".to_string(),
+            ))
+        }
+    }
+    .map_err(|e| AudioError::StreamError(e.to_string()))?;
+
+    stream
+        .play()
+        .map_err(|e| AudioError::PlaybackError(e.to_string()))?;
+
+    while running.load(std::sync::atomic::Ordering::SeqCst) {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    drop(stream);
+
+    Ok(())
 }
 
 impl AudioHandle {

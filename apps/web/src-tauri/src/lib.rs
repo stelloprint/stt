@@ -7,16 +7,17 @@ mod session;
 mod stt;
 mod type_;
 
-use audio::AudioHandle;
+use audio::{AudioHandle, RecordCapture};
 use db::{Database, Entry, EntryCreate, Session, SessionCreate};
 use keys::{ActivationState, KeysHandle};
+use parking_lot::Mutex;
 use parking_lot::RwLock;
 use permissions::{PermissionState, Permissions};
 use prefs::{Preferences, Prefs};
 use session::SessionManager;
 use std::sync::Arc;
 use stt::{SttEngine, TranscriptionResult};
-use type_::{ContextHeuristic, TypeMethod, TypeOptions, Typer};
+use type_::Typer;
 
 pub struct AppState {
     pub prefs: Arc<Prefs>,
@@ -24,6 +25,7 @@ pub struct AppState {
     pub stt: Arc<SttEngine>,
     pub session_manager: Arc<SessionManager>,
     pub audio: Arc<AudioHandle>,
+    pub record_capture: Arc<Mutex<Option<RecordCapture>>>,
     pub keys: RwLock<Option<Arc<KeysHandle>>>,
 }
 
@@ -238,6 +240,98 @@ fn add_untyped_entry(state: tauri::State<'_, AppState>, text: String) -> Result<
     session::add_untyped_entry(&state, &text)
 }
 
+#[tauri::command]
+fn start_record_mode(state: tauri::State<'_, AppState>) -> Result<Session, String> {
+    let prefs = state.prefs.get();
+    let chunk_duration_ms = prefs.record.chunk_seconds * 1000;
+
+    let session = session::start_record_session(&state, &prefs)?;
+
+    let mut guard = state.record_capture.lock();
+    *guard = Some(RecordCapture::new(chunk_duration_ms));
+
+    if let Some(ref record) = *guard {
+        record
+            .start(session.id.clone())
+            .map_err(|e: audio::AudioError| e.to_string())?;
+    }
+
+    log::info!("Started record mode session: {}", session.id);
+    Ok(session)
+}
+
+#[tauri::command]
+fn stop_record_mode(state: tauri::State<'_, AppState>) -> Result<Option<Session>, String> {
+    let record = {
+        let mut guard = state.record_capture.lock();
+        guard.take()
+    };
+
+    if let Some(record) = record {
+        record
+            .stop()
+            .map_err(|e: audio::AudioError| e.to_string())?;
+    }
+
+    let session = session::end_record_session(&state)?;
+    log::info!("Stopped record mode session");
+    Ok(session)
+}
+
+#[tauri::command]
+fn transcribe_record_chunk(state: tauri::State<'_, AppState>) -> Result<Option<Entry>, String> {
+    let record = state.record_capture.lock();
+
+    if let Some(ref record) = *record {
+        if let Some((session_id, audio_data, timestamp)) = record.get_and_clear_chunk() {
+            if audio_data.len() < 1600 {
+                return Ok(None);
+            }
+
+            let prefs = state.prefs.get();
+            match state.stt.transcribe(&audio_data, &prefs) {
+                Ok(result) => {
+                    if !result.text.is_empty() {
+                        if let Err(e) = audio::append_to_transcript_file(&session_id, &result.text)
+                        {
+                            log::error!("Failed to write transcript: {}", e);
+                        }
+
+                        let entry = EntryCreate {
+                            id: uuid_v4(),
+                            session_id,
+                            started_at: timestamp as i64,
+                            ended_at: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as i64,
+                            text: result.text,
+                            source: db::SessionMode::Record,
+                            typed: false,
+                        };
+
+                        return state
+                            .db
+                            .create_entry(entry)
+                            .map(Some)
+                            .map_err(|e| e.to_string());
+                    }
+                }
+                Err(e) => {
+                    log::error!("Record chunk transcription failed: {}", e);
+                }
+            }
+        }
+    }
+    Ok(None)
+}
+
+#[tauri::command]
+fn get_record_status(state: tauri::State<'_, AppState>) -> bool {
+    let record = state.record_capture.lock();
+    record.as_ref().map(|r| r.is_recording()).unwrap_or(false)
+}
+
 #[cfg(target_os = "macos")]
 fn get_frontmost_app_name_internal() -> Option<String> {
     use objc2::rc::autoreleasepool;
@@ -253,6 +347,16 @@ fn get_frontmost_app_name_internal() -> Option<String> {
 #[cfg(not(target_os = "macos"))]
 fn get_frontmost_app_name_internal() -> Option<String> {
     None
+}
+
+fn uuid_v4() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let random: u64 = (timestamp as u64) ^ (std::process::id() as u64 * 0x517cc1b727220a95);
+    format!("{:016x}-{:04x}", timestamp, random as u16)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -349,6 +453,7 @@ pub fn run() {
         stt: stt_engine,
         session_manager,
         audio,
+        record_capture: Arc::new(Mutex::new(None)),
         keys: RwLock::new(keys_handle),
     };
 
@@ -386,6 +491,10 @@ pub fn run() {
             end_session,
             add_typed_entry,
             add_untyped_entry,
+            start_record_mode,
+            stop_record_mode,
+            transcribe_record_chunk,
+            get_record_status,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
