@@ -240,21 +240,18 @@ sequenceDiagram
 - macOS category: Productivity
 - Entitlements: microphone, accessibility; no network
 
-## Implementation Tasks (MVP)
+## Implementation Tasks (Worktrees)
 
-1) Bootstrap Tauri v2 app (React + TanStack Router); tray + settings window; CSP and allowlist locked down
-2) Rust: prefs.rs (load/save), main.rs (commands + plugin init)
-3) Rust: db.rs (SQLite migrations; CRUD; FTS5)
-4) Rust: keys.rs (L/R modifiers-only capture; hold/toggle state machine; debounce)
-5) Rust: audio.rs (cpal capture; resample; RMS silence detector)
-6) Rust: stt.rs (model load with SHA‑256 verify; whisper-rs inference; profiles)
-7) Rust: typer.rs (keystroke typing; clipboard fallback; release-modifier guard)
-8) UI: /settings (hotkeys, profiles, silence, translate, typing, voice commands)
-9) UI: /logs (TanStack Table; search; view session; select entries; export .txt/.md)
-10) UI: / (HUD) and /record (long‑form session control)
-11) Wire commands: start/stop capture, transcribe, insert typed text, read/write prefs, DB queries, export file dialog
-12) Tests: unit (post-process; prefs; DB); manual QA across Terminal, Cursor, VS Code, Safari
-13) Documentation: README (offline promise), SECURITY (permissions & model verification), SHA‑256 workflow
+See [.agents/skills/worktrees/SKILL.md](./worktrees/SKILL.md) for active workstreams and issue chains.
+
+| Worktree | Current Issue | Documentation |
+|----------|---------------|---------------|
+| audio-pipeline | [stt-rtf](./worktrees/audio-capture.md) | [audio-capture.md](./worktrees/audio-capture.md) |
+| session-persistence | [stt-3b0](./worktrees/session-persistence.md) | [session-persistence.md](./worktrees/session-persistence.md) |
+| model-tests | [stt-t00](./worktrees/model-tests.md) | [model-tests.md](./worktrees/model-tests.md) |
+| export-tests | [stt-xz0](./worktrees/export-tests.md) | [export-tests.md](./worktrees/export-tests.md) |
+| record-mode | stt-rtf → stt-bq4 (blocked) | [record-mode.md](./worktrees/record-mode.md) |
+| model-ui | stt-rtf → stt-j53 (blocked) | [model-ui.md](./worktrees/model-ui.md) |
 
 ## Export Format Details
 
@@ -278,12 +275,19 @@ The repo is initialized as a Turborepo monorepo with:
 - `apps/web/` - Tauri + React app (src-tauri embedded)
 - `packages/config/` - shared config package (placeholder)
 - `packages/env/` - env types package
+- `.agents/worktrees/` - workstream documentation (see [SKILL.md](./worktrees/SKILL.md))
 
 ## After Push (Next Actions the Agent Can Implement)
 
-- Add Rust module skeletons (keys.rs, audio.rs, stt.rs, typer.rs, prefs.rs, db.rs)
-- Add SQLite migrations and FTS5 integration
-- Implement defaults in packages/config (model checksums, default prefs)
+Start work by entering a worktree and claiming the next ready issue:
+
+```bash
+task.sh start audio-pipeline
+cd .agents/worktrees/audio-pipeline
+bd ready
+```
+
+See [.agents/skills/worktrees/SKILL.md](./worktrees/SKILL.md) for the full list of worktrees and their issue chains.
 
 ## QA Checklist
 
