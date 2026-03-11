@@ -30,83 +30,8 @@ pub struct AppState {
 }
 
 #[tauri::command]
-fn transcribe_record_chunk(state: tauri::State<'_, AppState>) -> Result<Option<Entry>, String> {
-    let prefs = state.prefs.get();
-
-    let should_rotate = {
-        let record = state.record_capture.lock();
-        if let Some(ref record) = *record {
-            record.check_rotation_needed(prefs.record.max_hours, prefs.record.max_file_gb)
-        } else {
-            false
-        }
-    };
-
-    if should_rotate {
-        log::info!("Record mode rotation triggered - max hours or file size reached");
-
-        session::end_record_session(&state).ok();
-
-        let chunk_duration_ms = prefs.record.chunk_seconds * 1000;
-        let new_session =
-            session::start_record_session(&state, &prefs).map_err(|e| e.to_string())?;
-
-        *state.record_capture.lock() = Some(audio::RecordCapture::new(chunk_duration_ms));
-
-        if let Some(ref mut record) = *state.record_capture.lock() {
-            record
-                .start(new_session.id.clone())
-                .map_err(|e| e.to_string())?;
-        }
-
-        log::info!("Rotated to new session: {}", new_session.id);
-    }
-
-    let record = state.record_capture.lock();
-
-    if let Some(ref record) = *record {
-        if let Some((session_id, audio_data, timestamp)) = record.get_and_clear_chunk() {
-            if audio_data.len() < 1600 {
-                return Ok(None);
-            }
-
-            match state.stt.transcribe(&audio_data, &prefs) {
-                Ok(result) => {
-                    if !result.text.is_empty() {
-                        if let Err(e) = audio::append_to_transcript_file(&session_id, &result.text)
-                        {
-                            log::error!("Failed to write transcript: {}", e);
-                        }
-
-                        record.update_file_size(&session_id, result.text.len());
-
-                        let entry = EntryCreate {
-                            id: uuid_v4(),
-                            session_id,
-                            started_at: timestamp as i64,
-                            ended_at: std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis() as i64,
-                            text: result.text,
-                            source: db::SessionMode::Record,
-                            typed: false,
-                        };
-
-                        return state
-                            .db
-                            .create_entry(entry)
-                            .map(Some)
-                            .map_err(|e| e.to_string());
-                    }
-                }
-                Err(e) => {
-                    log::error!("Record chunk transcription failed: {}", e);
-                }
-            }
-        }
-    }
-    Ok(None)
+fn get_preferences(state: tauri::State<'_, AppState>) -> Preferences {
+    state.prefs.get()
 }
 
 #[tauri::command]
@@ -356,7 +281,7 @@ fn stop_record_mode(state: tauri::State<'_, AppState>) -> Result<Option<Session>
 #[tauri::command]
 fn transcribe_record_chunk(state: tauri::State<'_, AppState>) -> Result<Option<Entry>, String> {
     let prefs = state.prefs.get();
-    let mut record = state.record_capture.lock();
+    let record = state.record_capture.lock();
 
     if let Some(ref record) = *record {
         let needs_rotation =
@@ -364,14 +289,12 @@ fn transcribe_record_chunk(state: tauri::State<'_, AppState>) -> Result<Option<E
 
         if needs_rotation {
             log::info!("Record mode rotation triggered - max hours or file size reached");
-            drop(record);
+            let old_session_id = record.get_session_id();
 
-            if let Some(old_session_id) = {
-                let record = state.record_capture.lock();
-                record.get_session_id()
-            } {
+            let _ = record;
+
+            if old_session_id.is_some() {
                 session::end_record_session(&state).ok();
-                let _ = old_session_id;
             }
 
             let chunk_duration_ms = prefs.record.chunk_seconds * 1000;
@@ -387,9 +310,53 @@ fn transcribe_record_chunk(state: tauri::State<'_, AppState>) -> Result<Option<E
             }
 
             log::info!("Rotated to new session: {}", new_session.id);
-        }
 
-        if let Some(ref record) = *record {
+            let record = state.record_capture.lock();
+            if let Some(ref record) = *record {
+                if let Some((session_id, audio_data, timestamp)) = record.get_and_clear_chunk() {
+                    if audio_data.len() < 1600 {
+                        return Ok(None);
+                    }
+
+                    match state.stt.transcribe(&audio_data, &prefs) {
+                        Ok(result) => {
+                            if !result.text.is_empty() {
+                                if let Err(e) =
+                                    audio::append_to_transcript_file(&session_id, &result.text)
+                                {
+                                    log::error!("Failed to write transcript: {}", e);
+                                }
+
+                                record.update_file_size(&session_id, result.text.len());
+
+                                let entry = EntryCreate {
+                                    id: uuid_v4(),
+                                    session_id: session_id.clone(),
+                                    started_at: timestamp as i64,
+                                    ended_at: std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_millis()
+                                        as i64,
+                                    text: result.text,
+                                    source: db::SessionMode::Record,
+                                    typed: false,
+                                };
+
+                                return state
+                                    .db
+                                    .create_entry(entry)
+                                    .map(Some)
+                                    .map_err(|e| e.to_string());
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Record chunk transcription failed: {}", e);
+                        }
+                    }
+                }
+            }
+        } else {
             if let Some((session_id, audio_data, timestamp)) = record.get_and_clear_chunk() {
                 if audio_data.len() < 1600 {
                     return Ok(None);
@@ -408,7 +375,7 @@ fn transcribe_record_chunk(state: tauri::State<'_, AppState>) -> Result<Option<E
 
                             let entry = EntryCreate {
                                 id: uuid_v4(),
-                                session_id,
+                                session_id: session_id.clone(),
                                 started_at: timestamp as i64,
                                 ended_at: std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
@@ -504,7 +471,7 @@ pub fn run() {
             let audio = Arc::clone(&audio);
             let stt = Arc::clone(&stt_engine);
             let prefs = Arc::clone(&prefs);
-            let db = Arc::clone(&db);
+            let _db = Arc::clone(&db);
 
             k.on_activation(move |state, _source| match state {
                 ActivationState::Active => {

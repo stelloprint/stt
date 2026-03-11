@@ -210,7 +210,7 @@ fn run_capture_loop(
     is_recording: Arc<AtomicBool>,
     running: Arc<AtomicBool>,
     sample_rate: Arc<std::sync::RwLock<Option<u32>>>,
-    device_sample_rate: u32,
+    _device_sample_rate: u32,
     input_channels: u16,
 ) -> Result<(), AudioError> {
     let host = cpal::default_host();
@@ -601,6 +601,61 @@ impl RecordCapture {
     pub fn get_sample_rate(&self) -> Option<u32> {
         *self.sample_rate.read().unwrap()
     }
+
+    pub fn get_session_id(&self) -> Option<String> {
+        self.session_id.read().unwrap().clone()
+    }
+
+    pub fn check_rotation_needed(&self, max_hours: u32, max_file_gb: u32) -> bool {
+        let binding = self.session_id.read().unwrap();
+        let session_id = match binding.as_ref() {
+            Some(id) => id,
+            None => return false,
+        };
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let start_time = *self.buffer_start_time.read().unwrap();
+        let elapsed_hours = (now - start_time) as f64 / (1000.0 * 60.0 * 60.0);
+
+        if elapsed_hours >= max_hours as f64 {
+            log::info!(
+                "Rotation needed: {} hours elapsed (max {})",
+                elapsed_hours,
+                max_hours
+            );
+            return true;
+        }
+
+        let file_size_bytes = self.get_file_size_bytes(session_id);
+        let file_size_gb = file_size_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+
+        if file_size_gb >= max_file_gb as f64 {
+            log::info!(
+                "Rotation needed: {} GB file size (max {})",
+                file_size_gb,
+                max_file_gb
+            );
+            return true;
+        }
+
+        false
+    }
+
+    fn get_file_size_bytes(&self, session_id: &str) -> u64 {
+        if let Ok(transcripts_dir) = get_transcripts_dir() {
+            let filename = format!("{}.txt", session_id);
+            let filepath = transcripts_dir.join(filename);
+            if let Ok(metadata) = std::fs::metadata(&filepath) {
+                return metadata.len();
+            }
+        }
+        0
+    }
+
+    pub fn update_file_size(&self, _session_id: &str, _text_len: usize) {}
 }
 
 fn run_record_capture_loop(
@@ -609,7 +664,7 @@ fn run_record_capture_loop(
     is_recording: Arc<std::sync::atomic::AtomicBool>,
     running: Arc<std::sync::atomic::AtomicBool>,
     sample_rate: Arc<std::sync::RwLock<Option<u32>>>,
-    device_sample_rate: u32,
+    _device_sample_rate: u32,
     input_channels: u16,
     _chunk_duration_ms: u32,
 ) -> Result<(), AudioError> {
@@ -632,7 +687,7 @@ fn run_record_capture_loop(
     let stream = match config.sample_format() {
         cpal::SampleFormat::F32 => {
             let buffer = buffer.clone();
-            let buffer_start_time = buffer_start_time.clone();
+            let _buffer_start_time = buffer_start_time.clone();
 
             let callback = move |data: &[f32], _: &cpal::InputCallbackInfo| {
                 if !is_recording.load(std::sync::atomic::Ordering::SeqCst) {
@@ -666,7 +721,7 @@ fn run_record_capture_loop(
         }
         cpal::SampleFormat::I16 => {
             let buffer = buffer.clone();
-            let buffer_start_time = buffer_start_time.clone();
+            let _buffer_start_time = buffer_start_time.clone();
 
             let callback = move |data: &[i16], _: &cpal::InputCallbackInfo| {
                 if !is_recording.load(std::sync::atomic::Ordering::SeqCst) {
@@ -704,7 +759,7 @@ fn run_record_capture_loop(
         }
         cpal::SampleFormat::U16 => {
             let buffer = buffer.clone();
-            let buffer_start_time = buffer_start_time.clone();
+            let _buffer_start_time = buffer_start_time.clone();
 
             let callback = move |data: &[u16], _: &cpal::InputCallbackInfo| {
                 if !is_recording.load(std::sync::atomic::Ordering::SeqCst) {
