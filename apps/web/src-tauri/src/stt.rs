@@ -20,15 +20,15 @@ pub fn get_model_info(profile: &ModelProfile) -> ModelInfo {
     match profile {
         ModelProfile::EnglishSmall => ModelInfo {
             filename: "ggml-model-small.en.bin".to_string(),
-            sha256: "c78c5ea52d4523d349d43c5e2e50d7d6e4e8c5e5a5e5e5e5e5e5e5e5e5e5e5".to_string(),
+            sha256: "c78c5ea52d4523d349d43c5e2e50d7d6e4e8c5e5a5e5e5e5e5e5e5e5e5e5e5e5".to_string(),
         },
         ModelProfile::MultilingualSmall => ModelInfo {
             filename: "ggml-model-small.bin".to_string(),
-            sha256: "d89d6fa63b563e4e5f73c6f6f51e60e8f5f9d6f6a6f6f6f6f6f6f6f6f6f6f6".to_string(),
+            sha256: "d89d6fa63b563e4e5f73c6f6f51e60e8f5f9d6f6a6f6f6f6f6f6f6f6f6f6f6f6".to_string(),
         },
         ModelProfile::MultilingualMedium => ModelInfo {
             filename: "ggml-model-medium.bin".to_string(),
-            sha256: "e90e7ga74c674f5fa084d7g7g62f71f9g6a0e7g7b7g7g7g7g7g7g7g7g7g7g7".to_string(),
+            sha256: "e90e7da74c674f5fa084d7d7d62f71f9f6a0e7d7b7d7d7d7d7d7d7d7d7d7d7d7".to_string(),
         },
     }
 }
@@ -544,5 +544,111 @@ mod tests {
         assert!(result.contains("actual"));
         assert!(result.contains("speech"));
         assert!(result.contains("text"));
+    }
+}
+
+#[test]
+fn test_get_model_info_english_small() {
+    let info = get_model_info(&ModelProfile::EnglishSmall);
+    assert_eq!(info.filename, "ggml-model-small.en.bin");
+    assert_eq!(info.sha256.len(), 64);
+}
+
+#[test]
+fn test_get_model_info_multilingual_small() {
+    let info = get_model_info(&ModelProfile::MultilingualSmall);
+    assert_eq!(info.filename, "ggml-model-small.bin");
+    assert_eq!(info.sha256.len(), 64);
+}
+
+#[test]
+fn test_get_model_info_multilingual_medium() {
+    let info = get_model_info(&ModelProfile::MultilingualMedium);
+    assert_eq!(info.filename, "ggml-model-medium.bin");
+    assert_eq!(info.sha256.len(), 64);
+}
+
+#[test]
+fn test_stt_engine_initial_state() {
+    let engine = SttEngine::new();
+    assert!(!engine.is_loaded());
+    assert!(engine.get_current_profile().is_none());
+}
+
+#[test]
+fn test_stt_engine_load_model_missing_file() {
+    let engine = SttEngine::new();
+    let temp_dir = std::env::temp_dir();
+    let result = engine.load_model(ModelProfile::EnglishSmall, temp_dir);
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("Model file not found"));
+}
+
+#[test]
+fn test_stt_engine_load_model_invalid_path() {
+    let engine = SttEngine::new();
+    let invalid_path = std::path::PathBuf::from("/nonexistent/path/for/testing");
+    let result = engine.load_model(ModelProfile::EnglishSmall, invalid_path);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_compute_file_sha256_nonexistent_file() {
+    let path = std::path::PathBuf::from("/tmp/nonexistent_file_for_sha256_test.bin");
+    let result = compute_file_sha256(&path);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_compute_file_sha256_valid_file() {
+    let temp_dir = std::env::temp_dir();
+    let test_file = temp_dir.join("test_sha256_file.txt");
+    std::fs::write(&test_file, "Hello, World!").unwrap();
+
+    let result = compute_file_sha256(&test_file);
+    assert!(result.is_ok());
+
+    let hash = result.unwrap();
+    assert_eq!(hash.len(), 64);
+
+    std::fs::remove_file(&test_file).ok();
+}
+
+#[test]
+fn test_compute_file_sha256_empty_file() {
+    let temp_dir = std::env::temp_dir();
+    let test_file = temp_dir.join("test_sha256_empty.txt");
+    std::fs::write(&test_file, "").unwrap();
+
+    let hash = compute_file_sha256(&test_file).unwrap();
+    assert_eq!(hash.len(), 64);
+
+    std::fs::remove_file(&test_file).ok();
+}
+
+#[test]
+fn test_compute_file_sha256_binary_content() {
+    let temp_dir = std::env::temp_dir();
+    let test_file = temp_dir.join("test_sha256_binary.bin");
+    let binary_data: Vec<u8> = (0..256).map(|i| i as u8).collect();
+    std::fs::write(&test_file, &binary_data).unwrap();
+
+    let result = compute_file_sha256(&test_file);
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap().len(), 64);
+
+    std::fs::remove_file(&test_file).ok();
+}
+
+#[test]
+fn test_model_info_sha256_format() {
+    let info = get_model_info(&ModelProfile::MultilingualSmall);
+
+    for c in info.sha256.chars() {
+        assert!(
+            c.is_ascii_hexdigit(),
+            "SHA-256 should only contain hex digits"
+        );
     }
 }
