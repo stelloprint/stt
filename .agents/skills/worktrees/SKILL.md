@@ -6,60 +6,75 @@ Each worktree represents an ongoing workstream that handles a chain of dependent
 
 | Worktree | Issue Chain | Status | Docs |
 |----------|-------------|--------|------|
-| audio-pipeline | [stt-rtf](./audio-capture.md) → stt-y3w → stt-pmb → stt-6a1 | Ready: rtf | [audio-capture.md](./audio-capture.md) |
-| record-mode | [stt-rtf](#) → stt-bq4 → stt-rdp → stt-83i | Ready: rtf (blocked by audio-pipeline) | [record-mode.md](./record-mode.md) |
-| model-ui | [stt-rtf](#) → stt-j53 | Ready: rtf (blocked by audio-pipeline) | [model-ui.md](./model-ui.md) |
-| session-persistence | [stt-3b0](./session-persistence.md) → stt-t4k | Ready: 3b0 | [session-persistence.md](./session-persistence.md) |
-| model-tests | [stt-t00](./model-tests.md) | Ready | [model-tests.md](./model-tests.md) |
-| export-tests | [stt-xz0](./export-tests.md) | Ready | [export-tests.md](./export-tests.md) |
+| record-mode | [stt-rtf](#) → stt-bq4 → stt-rdp → stt-83i | In Progress: bq4 | [record-mode.md](./record-mode.md) |
+| fix-compilation-bug | stt-im0 | Ready | Bug: test compilation errors in stt.rs |
+| audio-tests | stt-28a | Ready | Unit tests: audio capture and silence detection |
+| manual-qa | stt-8rv | Ready | Cross-cutting manual QA |
+
+## Completed Workstreams
+
+| Worktree | Final Issue | Status |
+|----------|-------------|--------|
+| audio-pipeline | stt-y3w (hotkey wiring) | Complete |
+| model-ui | stt-j53 (model management UI) | Complete |
+| session-persistence | stt-t4k (persistence wiring) | Complete |
+| model-tests | stt-t00 (model loading/SHA-256) | Complete |
+| export-tests | stt-xz0 (export functionality) | Complete |
 
 ## Dependency Graph
 
 ```
-stt-rtf ──► stt-y3w ──► stt-pmb ──► stt-6a1
-    │
-    ├─► stt-bq4 ──► stt-rdp ──► stt-83i
-    │
-    ├─► stt-1j5 ──► toggle mode (not in workstream)
-    │
-    ├─► stt-28a ──► audio tests (not in workstream)
-    │
-    └─► stt-j53 ──► model-ui
+audio-pipeline (COMPLETE)
+stt-rtf ──► stt-y3w ──► stt-1j5 ──► toggle mode
+              │
+              └─► stt-28a ──► audio tests
 
-stt-3b0 ──► stt-t4k ──► persistence wiring
+record-mode
+stt-rtf ──► stt-bq4 ──► stt-rdp ──► stt-83i
+              (in progress)
+
+model-ui (COMPLETE) ──► stt-j53 ✓
+
+session-persistence (COMPLETE)
+stt-3b0 ──► stt-t4k ✓
 ```
 
 ## Workstream Details
 
-### audio-pipeline
-- **Chain**: [stt-rtf](./audio-capture.md) → stt-y3w → stt-pmb → stt-6a1
-- **Current**: [stt-rtf](./audio-capture.md) (Implement audio.rs module)
-- **Unblocks**: hotkey wiring, transcription to typer, integration tests
-
-### record-mode  
+### record-mode
 - **Chain**: stt-rtf → stt-bq4 → stt-rdp → stt-83i
-- **Current**: stt-rtf (waits for audio-pipeline)
-- **Note**: Depends on audio-pipeline completing rtf first
+- **Current**: [stt-bq4](https://github.com/stelloprint/stt/issues/bq4) (Implement long-form record mode audio capture)
+- **Unblocks**: file rotation, record mode tests
 - **Docs**: [record-mode.md](./record-mode.md)
 
-### model-ui
-- **Chain**: stt-rtf → stt-j53
-- **Current**: stt-rtf (waits for audio-pipeline)
-- **Note**: Depends on audio-pipeline completing rtf first
-- **Docs**: [model-ui.md](./model-ui.md)
+### fix-compilation-bug
+- **Current**: [stt-im0](https://github.com/stelloprint/stt/issues/im0) (Fix test compilation errors in stt.rs)
+- **Priority**: Bug - blocks all test execution
+- **Fix**: Add missing VoiceCommandMap and VoiceCommands types to src/stt.rs
 
-### session-persistence
-- **Chain**: [stt-3b0](./session-persistence.md) → stt-t4k
-- **Current**: [stt-3b0](./session-persistence.md) (Capture frontmost app name)
-- **Unblocks**: DB persistence wiring
+### audio-tests
+- **Current**: [stt-28a](https://github.com/stelloprint/stt/issues/28a) (Unit tests: audio capture and silence detection)
+- **Independent**: No dependencies after stt-rtf closed
 
-### model-tests
-- **Current**: [stt-t00](./model-tests.md) (Unit tests: model loading and SHA-256)
-- **Independent**: No dependencies
+### manual-qa
+- **Current**: [stt-8rv](https://github.com/stelloprint/stt/issues/8rv) (Manual QA: hotkeys, hold/toggle, voice commands, record mode)
+- **Note**: Cross-cutting - requires all core implementation complete
 
-### export-tests
-- **Current**: [stt-xz0](./export-tests.md) (Unit tests: export functionality)
-- **Independent**: No dependencies
+## Ready Issues
+
+| Issue | Title | Type | Priority |
+|-------|-------|------|-----------|
+| stt-im0 | Fix test compilation errors in stt.rs | bug | 2 |
+| stt-1j5 | Implement toggle mode with silence detection | task | 1 |
+| stt-28a | Unit tests: audio capture and silence detection | chore | 3 |
+| stt-8rv | Manual QA: hotkeys, hold/toggle, voice commands, record mode | chore | 3 |
+
+## Blocked Issues
+
+| Issue | Title | Blocked By |
+|-------|-------|------------|
+| stt-rdp | Implement record mode file rotation | stt-bq4 |
+| stt-83i | Unit tests: record mode chunking and rotation | stt-rdp |
 
 ## Entering a Workstream
 
@@ -84,10 +99,8 @@ When an issue is completed:
 ## Creating Worktrees
 
 ```bash
-task.sh start audio-pipeline
 task.sh start record-mode
-task.sh start model-ui
-task.sh start session-persistence
-task.sh start model-tests -e   # uses existing branch
-task.sh start export-tests -e  # uses existing branch
+task.sh start fix-compilation-bug
+task.sh start audio-tests
+task.sh start manual-qa
 ```
