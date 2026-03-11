@@ -34,3 +34,6 @@ arboard = "3.4"
 whisper-rs = { version = "0.15", features = ["metal"] }
 sha2 = "0.10"
 hex = "0.4"
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-app-kit = "0.3"

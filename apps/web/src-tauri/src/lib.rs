@@ -198,6 +198,28 @@ fn open_accessibility_settings() -> Result<(), String> {
     Permissions::open_accessibility_settings()
 }
 
+#[tauri::command]
+fn get_frontmost_app_name() -> Option<String> {
+    get_frontmost_app_name_internal()
+}
+
+#[cfg(target_os = "macos")]
+fn get_frontmost_app_name_internal() -> Option<String> {
+    use objc2::rc::autoreleasepool;
+    use objc2_app_kit::NSRunningApplication;
+
+    autoreleasepool(|_| {
+        let app = NSRunningApplication::currentApplication();
+        let app_name = app.localizedName()?;
+        Some(app_name.to_string())
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn get_frontmost_app_name_internal() -> Option<String> {
+    None
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let prefs = match Prefs::new() {
@@ -251,6 +273,7 @@ pub fn run() {
             request_accessibility_permission,
             open_microphone_settings,
             open_accessibility_settings,
+            get_frontmost_app_name,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
