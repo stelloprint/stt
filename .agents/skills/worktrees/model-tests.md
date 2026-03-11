@@ -1,5 +1,7 @@
 # Worktree: model-tests
 
+**Plan Reference**: See [PLAN.md: Whisper Integration](../plan/SKILL.md#whisper-integration) and [PLAN.md: Models & Languages](../plan/SKILL.md#models--languages-coding-centric)
+
 ## Issue
 - **ID**: stt-t00
 - **Title**: Unit tests: model loading and SHA-256 verification

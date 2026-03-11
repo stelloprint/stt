@@ -1,5 +1,7 @@
 # Worktree: session-metadata
 
+**Plan Reference**: See [PLAN.md: Data Storage (SQLite)](../plan/SKILL.md#data-storage-sqlite)
+
 ## Issue
 - **ID**: stt-3b0
 - **Title**: Capture frontmost app name for session metadata

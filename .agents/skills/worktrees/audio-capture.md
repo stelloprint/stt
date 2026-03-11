@@ -1,5 +1,7 @@
 # Worktree: audio-capture
 
+**Plan Reference**: See [PLAN.md: Audio Capture & Silence](../plan/SKILL.md#audio-capture--silence-vad-lite)
+
 ## Issue
 - **ID**: stt-rtf
 - **Title**: Implement audio capture module (audio.rs)
