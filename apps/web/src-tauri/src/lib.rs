@@ -259,6 +259,18 @@ pub fn run() {
                         match stt.transcribe(&audio_data, &prefs_clone) {
                             Ok(result) => {
                                 log::info!("Transcription result: {}", result.text);
+                                if !result.text.is_empty() {
+                                    match Typer::with_defaults() {
+                                        Ok(typer) => {
+                                            if let Err(e) = typer.type_text(&result.text) {
+                                                log::error!("Failed to type text: {}", e);
+                                            }
+                                        }
+                                        Err(e) => {
+                                            log::error!("Failed to create typer: {}", e);
+                                        }
+                                    }
+                                }
                                 if let Err(e) = audio.clear_buffer() {
                                     log::error!("Failed to clear audio buffer: {}", e);
                                 }
