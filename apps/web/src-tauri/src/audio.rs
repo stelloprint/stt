@@ -49,6 +49,31 @@ fn compute_rms(samples: &[f32]) -> f32 {
     (sum_sq / samples.len() as f32).sqrt()
 }
 
+fn resample_linear(samples: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
+    if from_rate == to_rate {
+        return samples.to_vec();
+    }
+
+    let ratio = to_rate as f32 / from_rate as f32;
+    let new_len = (samples.len() as f32 * ratio) as usize;
+    let mut output = Vec::with_capacity(new_len);
+
+    for i in 0..new_len {
+        let src_idx = i as f32 / ratio;
+        let idx = src_idx as usize;
+        let frac = src_idx - idx as f32;
+
+        if idx + 1 < samples.len() {
+            let sample = samples[idx] * (1.0 - frac) + samples[idx + 1] * frac;
+            output.push(sample);
+        } else if idx < samples.len() {
+            output.push(samples[idx]);
+        }
+    }
+
+    output
+}
+
 pub struct AudioCapture {
     is_recording: AtomicBool,
     sample_rate: std::sync::RwLock<Option<u32>>,
@@ -91,14 +116,19 @@ impl AudioCapture {
         self.silence_start_time.store(0, Ordering::SeqCst);
         self.running.store(true, Ordering::SeqCst);
 
-        let buffer = Arc::new(self.buffer.clone());
-        let silence_threshold = Arc::new(self.silence_threshold.clone());
-        let silence_start_time = &self.silence_start_time;
-        let is_recording = &self.is_recording;
-        let running = &self.running;
-        let sample_rate = &self.sample_rate;
-        let device_sample_rate = self.device_sample_rate;
-        let input_channels = self.input_channels;
+        let buffer = Arc::new(std::sync::RwLock::new(Vec::<f32>::new()));
+        let silence_threshold = Arc::new(std::sync::RwLock::new(SilenceLevel::Medium.threshold()));
+        let silence_start_time = Arc::new(AtomicU64::new(0));
+        let is_recording = Arc::new(AtomicBool::new(true));
+        let running = Arc::new(AtomicBool::new(true));
+        let sample_rate = Arc::new(std::sync::RwLock::new(None::<u32>));
+
+        let this = self;
+        *buffer.write().unwrap() = this.buffer.read().unwrap().clone();
+        *silence_threshold.write().unwrap() = *this.silence_threshold.read().unwrap();
+
+        let device_sample_rate = this.device_sample_rate;
+        let input_channels = this.input_channels;
 
         thread::spawn(move || {
             if let Err(e) = run_capture_loop(
@@ -151,7 +181,14 @@ impl AudioCapture {
     }
 
     pub fn get_buffer(&self) -> Vec<f32> {
-        self.buffer.read().unwrap().clone()
+        let sr = *self.sample_rate.read().unwrap();
+        let buf = self.buffer.read().unwrap().clone();
+        if let Some(device_sr) = sr {
+            if device_sr != TARGET_SAMPLE_RATE {
+                return resample_linear(&buf, device_sr, TARGET_SAMPLE_RATE);
+            }
+        }
+        buf
     }
 
     pub fn clear_buffer(&self) {
@@ -168,10 +205,10 @@ impl Default for AudioCapture {
 fn run_capture_loop(
     buffer: Arc<std::sync::RwLock<Vec<f32>>>,
     silence_threshold: Arc<std::sync::RwLock<f32>>,
-    silence_start_time: &AtomicU64,
-    is_recording: &AtomicBool,
-    running: &AtomicBool,
-    sample_rate: &std::sync::RwLock<Option<u32>>,
+    silence_start_time: Arc<AtomicU64>,
+    is_recording: Arc<AtomicBool>,
+    running: Arc<AtomicBool>,
+    sample_rate: Arc<std::sync::RwLock<Option<u32>>>,
     device_sample_rate: u32,
     input_channels: u16,
 ) -> Result<(), AudioError> {
@@ -184,22 +221,10 @@ fn run_capture_loop(
         .default_input_config()
         .map_err(|e| AudioError::DeviceError(e.to_string()))?;
 
-    *sample_rate.write().unwrap() = Some(config.sample_rate().0);
+    let device_sr = config.sample_rate().0;
+    *sample_rate.write().unwrap() = Some(device_sr);
 
-    let use_resample =
-        config.sample_rate().0 != TARGET_SAMPLE_RATE || config.channels() != TARGET_CHANNELS;
-
-    let resampler = if use_resample {
-        Some(rubato::FftFixedIn::<f32>::new(
-            config.sample_rate().0 as usize,
-            TARGET_SAMPLE_RATE as usize,
-            FRAME_SIZE,
-            config.channels() as usize,
-            TARGET_CHANNELS as usize,
-        ))
-    } else {
-        None
-    };
+    let use_resample = device_sr != TARGET_SAMPLE_RATE || config.channels() != TARGET_CHANNELS;
 
     let err_fn = |err| log::error!("Audio stream error: {}", err);
 
@@ -207,17 +232,23 @@ fn run_capture_loop(
         cpal::SampleFormat::F32 => {
             let buffer = buffer.clone();
             let silence_threshold = silence_threshold.clone();
-            let silence_start_time = silence_start_time;
+            let silence_start_time = silence_start_time.clone();
 
             let callback = move |data: &[f32], _: &cpal::InputCallbackInfo| {
                 if !is_recording.load(Ordering::SeqCst) {
                     return;
                 }
 
-                let output = if let Some(ref rs) = resampler {
-                    let mut out = Vec::new();
-                    let _ = rs.process(data, &mut out);
-                    out
+                let output = if use_resample {
+                    let mono: Vec<f32> = if input_channels > 1 {
+                        data.iter()
+                            .step_by(input_channels as usize)
+                            .copied()
+                            .collect()
+                    } else {
+                        data.to_vec()
+                    };
+                    resample_linear(&mono, device_sr, TARGET_SAMPLE_RATE)
                 } else if input_channels > 1 {
                     data.iter()
                         .step_by(input_channels as usize)
@@ -252,7 +283,7 @@ fn run_capture_loop(
         cpal::SampleFormat::I16 => {
             let buffer = buffer.clone();
             let silence_threshold = silence_threshold.clone();
-            let silence_start_time = silence_start_time;
+            let silence_start_time = silence_start_time.clone();
 
             let callback = move |data: &[i16], _: &cpal::InputCallbackInfo| {
                 if !is_recording.load(Ordering::SeqCst) {
@@ -261,10 +292,17 @@ fn run_capture_loop(
 
                 let data_f32: Vec<f32> = data.iter().map(|&s| s as f32 / i16::MAX as f32).collect();
 
-                let output = if let Some(ref rs) = resampler {
-                    let mut out = Vec::new();
-                    let _ = rs.process(&data_f32, &mut out);
-                    out
+                let output = if use_resample {
+                    let mono: Vec<f32> = if input_channels > 1 {
+                        data_f32
+                            .iter()
+                            .step_by(input_channels as usize)
+                            .copied()
+                            .collect()
+                    } else {
+                        data_f32
+                    };
+                    resample_linear(&mono, device_sr, TARGET_SAMPLE_RATE)
                 } else if input_channels > 1 {
                     data_f32
                         .iter()
@@ -300,7 +338,7 @@ fn run_capture_loop(
         cpal::SampleFormat::U16 => {
             let buffer = buffer.clone();
             let silence_threshold = silence_threshold.clone();
-            let silence_start_time = silence_start_time;
+            let silence_start_time = silence_start_time.clone();
 
             let callback = move |data: &[u16], _: &cpal::InputCallbackInfo| {
                 if !is_recording.load(Ordering::SeqCst) {
@@ -312,10 +350,17 @@ fn run_capture_loop(
                     .map(|&s| (s as f32 - 32768.0) / 32768.0)
                     .collect();
 
-                let output = if let Some(ref rs) = resampler {
-                    let mut out = Vec::new();
-                    let _ = rs.process(&data_f32, &mut out);
-                    out
+                let output = if use_resample {
+                    let mono: Vec<f32> = if input_channels > 1 {
+                        data_f32
+                            .iter()
+                            .step_by(input_channels as usize)
+                            .copied()
+                            .collect()
+                    } else {
+                        data_f32
+                    };
+                    resample_linear(&mono, device_sr, TARGET_SAMPLE_RATE)
                 } else if input_channels > 1 {
                     data_f32
                         .iter()
@@ -370,46 +415,69 @@ fn run_capture_loop(
 }
 
 pub struct AudioHandle {
-    capture: Arc<AudioCapture>,
+    capture: std::sync::Mutex<Option<AudioCapture>>,
 }
 
 impl AudioHandle {
     pub fn new() -> Result<Self, AudioError> {
         Ok(Self {
-            capture: Arc::new(AudioCapture::new()),
+            capture: std::sync::Mutex::new(Some(AudioCapture::new())),
         })
     }
 
     pub fn set_silence_threshold(&self, level: SilenceLevel) {
-        self.capture.set_silence_threshold(level);
+        if let Some(ref cap) = *self.capture.lock().unwrap() {
+            cap.set_silence_threshold(level);
+        }
     }
 
     pub fn start(&self) -> Result<(), AudioError> {
-        self.capture.start()
+        if let Some(ref cap) = *self.capture.lock().unwrap() {
+            cap.start()
+        } else {
+            Err(AudioError::NotStarted)
+        }
     }
 
     pub fn stop(&self) -> Result<(), AudioError> {
-        self.capture.stop()
+        if let Some(ref cap) = *self.capture.lock().unwrap() {
+            cap.stop()
+        } else {
+            Err(AudioError::NotStarted)
+        }
     }
 
     pub fn is_recording(&self) -> bool {
-        self.capture.is_recording()
+        if let Some(ref cap) = *self.capture.lock().unwrap() {
+            cap.is_recording()
+        } else {
+            false
+        }
     }
 
     pub fn get_silence_duration_ms(&self) -> u64 {
-        self.capture.get_silence_duration_ms()
+        if let Some(ref cap) = *self.capture.lock().unwrap() {
+            cap.get_silence_duration_ms()
+        } else {
+            0
+        }
     }
 
     pub fn get_buffer(&self) -> Vec<f32> {
-        self.capture.get_buffer()
+        if let Some(ref cap) = *self.capture.lock().unwrap() {
+            cap.get_buffer()
+        } else {
+            Vec::new()
+        }
     }
 
-    pub fn clear_buffer(&self) {
-        self.capture.clear_buffer();
-    }
-
-    pub fn get_capture(&self) -> Arc<AudioCapture> {
-        Arc::clone(&self.capture)
+    pub fn clear_buffer(&self) -> Result<(), AudioError> {
+        if let Some(ref cap) = *self.capture.lock().unwrap() {
+            cap.clear_buffer();
+            Ok(())
+        } else {
+            Err(AudioError::NotStarted)
+        }
     }
 }
 

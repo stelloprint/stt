@@ -35,5 +35,4 @@ whisper-rs = { version = "0.15", features = ["metal"] }
 sha2 = "0.10"
 hex = "0.4"
 cpal = "0.15"
-rubato = "0.15"
 hound = "3.5"

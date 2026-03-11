@@ -1,3 +1,4 @@
+mod audio;
 mod db;
 mod keys;
 mod permissions;
@@ -5,7 +6,10 @@ mod prefs;
 mod stt;
 mod type_;
 
+use audio::AudioHandle;
 use db::{Database, Entry, EntryCreate, Session, SessionCreate};
+use keys::{ActivationState, KeysHandle};
+use parking_lot::RwLock;
 use permissions::{PermissionState, Permissions};
 use prefs::{Preferences, Prefs};
 use std::sync::Arc;
@@ -16,6 +20,8 @@ pub struct AppState {
     pub prefs: Arc<Prefs>,
     pub db: Arc<Database>,
     pub stt: Arc<SttEngine>,
+    pub audio: Arc<AudioHandle>,
+    pub keys: RwLock<Option<Arc<KeysHandle>>>,
 }
 
 #[tauri::command]
@@ -216,10 +222,68 @@ pub fn run() {
         }
     };
 
+    let audio = match AudioHandle::new() {
+        Ok(a) => Arc::new(a),
+        Err(e) => {
+            log::error!("Failed to initialize audio: {}", e);
+            panic!("Failed to initialize audio: {}", e);
+        }
+    };
+
+    let stt_engine = Arc::new(SttEngine::new());
+
+    let keys_handle = match KeysHandle::new() {
+        Ok(k) => {
+            let audio = Arc::clone(&audio);
+            let stt = Arc::clone(&stt_engine);
+            let prefs = Arc::clone(&prefs);
+            let db = Arc::clone(&db);
+
+            k.on_activation(move |state, _source| match state {
+                ActivationState::Active => {
+                    log::info!("Hotkey activated - starting audio capture");
+                    if let Err(e) = audio.start() {
+                        log::error!("Failed to start audio capture: {}", e);
+                    }
+                }
+                ActivationState::Inactive => {
+                    log::info!("Hotkey released - stopping audio capture");
+                    if let Err(e) = audio.stop() {
+                        log::error!("Failed to stop audio capture: {}", e);
+                    }
+
+                    let audio_data = audio.get_buffer();
+                    if !audio_data.is_empty() {
+                        log::info!("Transcribing {} audio samples", audio_data.len());
+                        let prefs_clone = prefs.get();
+                        match stt.transcribe(&audio_data, &prefs_clone) {
+                            Ok(result) => {
+                                log::info!("Transcription result: {}", result.text);
+                                if let Err(e) = audio.clear_buffer() {
+                                    log::error!("Failed to clear audio buffer: {}", e);
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("Transcription failed: {}", e);
+                            }
+                        }
+                    }
+                }
+            });
+            Some(Arc::new(k))
+        }
+        Err(e) => {
+            log::error!("Failed to initialize keyboard listener: {:?}", e);
+            None
+        }
+    };
+
     let app_state = AppState {
         prefs,
         db,
-        stt: Arc::new(SttEngine::new()),
+        stt: stt_engine,
+        audio,
+        keys: RwLock::new(keys_handle),
     };
 
     tauri::Builder::default()
