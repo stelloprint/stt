@@ -22,7 +22,7 @@ export const Route = createFileRoute("/record")({
 		return { sessions, activeSessions, entries };
 	},
 	component: RecordComponent,
-})
+});
 
 function RecordComponent() {
 	const { sessions, activeSessions } = Route.useLoaderData();
