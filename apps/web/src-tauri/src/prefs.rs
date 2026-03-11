@@ -301,11 +301,10 @@ impl Prefs {
     }
 
     pub fn get_models_dir() -> Result<PathBuf, PrefsError> {
-        let proj_dirs =
-            ProjectDirs::from("com", "whisper", "shared").ok_or(PrefsError::NoAppDir)?;
+        let proj_dirs = ProjectDirs::from("com", "stt", "sst").ok_or(PrefsError::NoAppDir)?;
 
-        let cache_dir = proj_dirs.cache_dir();
-        let models_dir = cache_dir.join("models");
+        let data_dir = proj_dirs.data_dir();
+        let models_dir = data_dir.join("models");
         fs::create_dir_all(&models_dir)?;
         Ok(models_dir)
     }

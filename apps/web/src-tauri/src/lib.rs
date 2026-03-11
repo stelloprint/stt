@@ -7,10 +7,30 @@ mod type_;
 
 use db::{Database, Entry, EntryCreate, Session, SessionCreate};
 use permissions::{PermissionState, Permissions};
-use prefs::{Preferences, Prefs};
+use prefs::{ModelProfile, Preferences, Prefs};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
-use stt::{SttEngine, TranscriptionResult};
+use stt::{get_model_info, SttEngine, TranscriptionResult};
 use type_::{ContextHeuristic, TypeMethod, TypeOptions, Typer};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelStatus {
+    pub profile: String,
+    pub filename: String,
+    pub expected_sha256: String,
+    pub file_exists: bool,
+    pub computed_sha256: Option<String>,
+    pub is_verified: bool,
+}
+
+fn compute_file_sha256(path: &std::path::Path) -> Result<String, String> {
+    let data = std::fs::read(path).map_err(|e| e.to_string())?;
+    let mut hasher = Sha256::new();
+    hasher.update(&data);
+    let result = hasher.finalize();
+    Ok(hex::encode(result))
+}
 
 pub struct AppState {
     pub prefs: Arc<Prefs>,
@@ -47,6 +67,87 @@ fn get_models_dir(_state: tauri::State<'_, AppState>) -> Result<String, String> 
     Prefs::get_models_dir()
         .map(|p| p.to_string_lossy().to_string())
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_model_statuses(_state: tauri::State<'_, AppState>) -> Result<Vec<ModelStatus>, String> {
+    let models_dir = Prefs::get_models_dir().map_err(|e| e.to_string())?;
+
+    let profiles = [
+        (ModelProfile::EnglishSmall, "small.en"),
+        (ModelProfile::MultilingualSmall, "multilingual-small"),
+        (ModelProfile::MultilingualMedium, "multilingual-medium"),
+    ];
+
+    let mut statuses = Vec::new();
+    for (profile, profile_name) in profiles {
+        let model_info = get_model_info(&profile);
+        let model_path = models_dir.join(&model_info.filename);
+        let file_exists = model_path.exists();
+
+        let (computed_sha256, is_verified) = if file_exists {
+            let computed = compute_file_sha256(&model_path).ok();
+            let verified = computed
+                .as_ref()
+                .map(|h| h == &model_info.sha256)
+                .unwrap_or(false);
+            (computed, verified)
+        } else {
+            (None, false)
+        };
+
+        statuses.push(ModelStatus {
+            profile: profile_name.to_string(),
+            filename: model_info.filename,
+            expected_sha256: model_info.sha256,
+            file_exists,
+            computed_sha256,
+            is_verified,
+        });
+    }
+
+    Ok(statuses)
+}
+
+#[tauri::command]
+fn get_current_model(_state: tauri::State<'_, AppState>) -> Option<String> {
+    None
+}
+
+#[tauri::command]
+fn verify_model(
+    _state: tauri::State<'_, AppState>,
+    profile: String,
+) -> Result<ModelStatus, String> {
+    let models_dir = Prefs::get_models_dir().map_err(|e| e.to_string())?;
+
+    let model_profile = match profile.as_str() {
+        "small.en" => ModelProfile::EnglishSmall,
+        "multilingual-small" => ModelProfile::MultilingualSmall,
+        "multilingual-medium" => ModelProfile::MultilingualMedium,
+        _ => return Err(format!("Unknown profile: {}", profile)),
+    };
+
+    let model_info = get_model_info(&model_profile);
+    let model_path = models_dir.join(&model_info.filename);
+    let file_exists = model_path.exists();
+
+    let (computed_sha256, is_verified) = if file_exists {
+        let computed = compute_file_sha256(&model_path).map_err(|e| e.to_string())?;
+        let verified = computed == model_info.sha256;
+        (Some(computed), verified)
+    } else {
+        (None, false)
+    };
+
+    Ok(ModelStatus {
+        profile,
+        filename: model_info.filename,
+        expected_sha256: model_info.sha256,
+        file_exists,
+        computed_sha256,
+        is_verified,
+    })
 }
 
 #[tauri::command]
@@ -230,6 +331,9 @@ pub fn run() {
             get_config_dir,
             get_data_dir,
             get_models_dir,
+            get_model_statuses,
+            get_current_model,
+            verify_model,
             create_session,
             get_session,
             get_all_sessions,

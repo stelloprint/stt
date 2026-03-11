@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
 
 import { toast } from "sonner";
 
@@ -17,14 +18,18 @@ import {
 	type ActivationMode,
 	api,
 	type ModelProfile,
+	type ModelStatus,
 	type Preferences,
 	type SilenceRms,
 } from "@/lib/api";
 
 export const Route = createFileRoute("/settings")({
 	loader: async () => {
-		const prefs = await api.preferences.get();
-		return { prefs };
+		const [prefs, modelStatuses] = await Promise.all([
+			api.preferences.get(),
+			api.models.getStatuses(),
+		]);
+		return { prefs, modelStatuses };
 	},
 	component: SettingsComponent,
 });
@@ -41,8 +46,31 @@ const silenceRmsLabels: Record<SilenceRms, string> = {
 	high: "High",
 };
 
+function getModelStatusBadge(status: ModelStatus) {
+	if (status.is_verified) {
+		return (
+			<span className="rounded-full bg-green-100 px-2 py-0.5 text-green-700 text-xs dark:bg-green-900 dark:text-green-300">
+				Verified
+			</span>
+		);
+	}
+	if (status.file_exists) {
+		return (
+			<span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300">
+				Mismatch
+			</span>
+		);
+	}
+	return (
+		<span className="rounded-full bg-red-100 px-2 py-0.5 text-red-700 text-xs dark:bg-red-900 dark:text-red-300">
+			Missing
+		</span>
+	);
+}
+
 function SettingsComponent() {
-	const { prefs } = Route.useLoaderData();
+	const { prefs, modelStatuses: initialModelStatuses } = Route.useLoaderData();
+	const [modelStatuses, setModelStatuses] = useState(initialModelStatuses);
 
 	const handleSave = async (formData: FormData) => {
 		const newPrefs: Preferences = {
@@ -214,6 +242,75 @@ function SettingsComponent() {
 								/>
 								<span className="text-xs">Translate to English</span>
 							</label>
+						</CardContent>
+					</Card>
+
+					<Card>
+						<CardHeader>
+							<CardTitle>Model Status</CardTitle>
+							<CardAction>
+								<a
+									className="text-muted-foreground text-xs underline hover:text-foreground"
+									href="https://huggingface.co/ggerganov/whisper.cpp"
+									rel="noopener noreferrer"
+									target="_blank"
+								>
+									Download models
+								</a>
+							</CardAction>
+						</CardHeader>
+						<CardContent className="grid gap-3">
+							{modelStatuses.map((status) => (
+								<div
+									className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-md border p-3"
+									key={status.profile}
+								>
+									<div className="grid gap-1">
+										<div className="flex items-center gap-2">
+											<span className="font-medium text-sm">
+												{modelProfileLabels[status.profile as ModelProfile] ??
+													status.profile}
+											</span>
+											{getModelStatusBadge(status)}
+										</div>
+										<span className="text-muted-foreground text-xs">
+											{status.filename}
+										</span>
+									</div>
+									<Button
+										onClick={async () => {
+											try {
+												const updated = await api.models.verify(status.profile);
+												setModelStatuses((prev) =>
+													prev.map((m) =>
+														m.profile === status.profile ? updated : m
+													)
+												);
+												if (updated.is_verified) {
+													toast.success(
+														`${status.profile} verified successfully`
+													);
+												} else if (updated.file_exists) {
+													toast.error(`${status.profile} SHA-256 mismatch`);
+												} else {
+													toast.error(`${status.profile} not found`);
+												}
+											} catch (error) {
+												toast.error("Verification failed", {
+													description:
+														error instanceof Error
+															? error.message
+															: "Unknown error",
+												});
+											}
+										}}
+										size="sm"
+										variant="outline"
+									>
+										Verify
+									</Button>
+								</div>
+							))}
 						</CardContent>
 					</Card>
 
