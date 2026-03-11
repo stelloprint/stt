@@ -2,6 +2,15 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type SessionMode = "hold" | "toggle" | "record";
 
+export interface ModelStatus {
+	computed_sha256: string | null;
+	expected_sha256: string;
+	file_exists: boolean;
+	filename: string;
+	is_verified: boolean;
+	profile: string;
+}
+
 export interface Session {
 	app_name: string | null;
 	chars_count: number;
@@ -110,6 +119,13 @@ export const api = {
 		config: () => invoke<string>("get_config_dir"),
 		data: () => invoke<string>("get_data_dir"),
 		models: () => invoke<string>("get_models_dir"),
+	},
+
+	models: {
+		getStatuses: () => invoke<ModelStatus[]>("get_model_statuses"),
+		getCurrent: () => invoke<string | null>("get_current_model"),
+		verify: (profile: string) =>
+			invoke<ModelStatus>("verify_model", { profile }),
 	},
 
 	sessions: {
