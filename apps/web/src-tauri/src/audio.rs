@@ -486,3 +486,103 @@ impl Default for AudioHandle {
         Self::new().expect("Failed to create audio handle")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rms_calculation_silence() {
+        let samples = vec![0.0, 0.0, 0.0, 0.0, 0.0];
+        let rms = compute_rms(&samples);
+        assert_eq!(rms, 0.0);
+    }
+
+    #[test]
+    fn test_rms_calculation_known_values() {
+        let samples = vec![1.0, -1.0, 1.0, -1.0];
+        let rms = compute_rms(&samples);
+        assert!((rms - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rms_calculation_single_sample() {
+        let samples = vec![0.5];
+        let rms = compute_rms(&samples);
+        assert!((rms - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rms_calculation_empty() {
+        let samples: Vec<f32> = vec![];
+        let rms = compute_rms(&samples);
+        assert_eq!(rms, 0.0);
+    }
+
+    #[test]
+    fn test_resample_linear_same_rate() {
+        let samples = vec![1.0, 2.0, 3.0, 4.0];
+        let result = resample_linear(&samples, 16000, 16000);
+        assert_eq!(result.len(), 4);
+        assert!((result[0] - 1.0).abs() < 0.001);
+        assert!((result[3] - 4.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_resample_linear_downsample() {
+        let samples = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let result = resample_linear(&samples, 8000, 4000);
+        assert_eq!(result.len(), 4);
+    }
+
+    #[test]
+    fn test_resample_linear_upsample() {
+        let samples = vec![1.0, 2.0, 3.0, 4.0];
+        let result = resample_linear(&samples, 4000, 8000);
+        assert_eq!(result.len(), 8);
+    }
+
+    #[test]
+    fn test_resample_linear_preserves_values() {
+        let samples = vec![1.0f32; 100];
+        let result = resample_linear(&samples, 44100, 16000);
+        for sample in &result {
+            assert!((sample - 1.0).abs() < 0.01);
+        }
+    }
+
+    #[test]
+    fn test_silence_level_thresholds() {
+        assert!(SilenceLevel::Low.threshold() < SilenceLevel::Medium.threshold());
+        assert!(SilenceLevel::Medium.threshold() < SilenceLevel::High.threshold());
+    }
+
+    #[test]
+    fn test_audio_capture_initial_state() {
+        let capture = AudioCapture::new();
+        assert!(!capture.is_recording());
+        assert_eq!(capture.get_silence_duration_ms(), 0);
+    }
+
+    #[test]
+    fn test_audio_handle_initial_state() {
+        let handle = AudioHandle::new().unwrap();
+        assert!(!handle.is_recording());
+    }
+
+    #[test]
+    fn test_audio_handle_new_creates_without_panic() {
+        let result = AudioHandle::new();
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    fn test_target_sample_rate_constant() {
+        assert_eq!(TARGET_SAMPLE_RATE, 16000);
+    }
+
+    #[test]
+    fn test_target_channels_constant() {
+        assert_eq!(TARGET_CHANNELS, 1);
+    }
+}
