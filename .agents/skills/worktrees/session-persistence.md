@@ -1,41 +1,16 @@
-# Worktree: session-metadata
+# Worktree: session-persistence
 
-**Plan Reference**: See [PLAN.md: Data Storage (SQLite)](../plan/SKILL.md#data-storage-sqlite)
+## Status
 
-## Issue
-- **ID**: stt-3b0
-- **Title**: Capture frontmost app name for session metadata
-- **Priority**: 2
-- **Type**: task
+Retired and replaced by [`ptt-runtime.md`](./ptt-runtime.md).
 
-## Description
-Per PLAN.md 'Data Storage': sessions table has app_name TEXT NULL (frontmost app at time of typing; best-effort). Need to detect frontmost macOS app before typing and store in session. This is a best-effort heuristic - use NSWorkspace or similar.
+## Why This Was Rewritten
 
-## What This Enables
-This blocks:
-1. **stt-t4k** - Session/entry persistence to PTT workflow (depends on app name being captured)
+The earlier workstream stopped at `stt-3b0`, but the live tracker now shows that the real unfinished work is broader:
 
-## Integration Points
-- **Source file**: `src-tauri/src/session.rs` (modify existing)
-- **Tauri commands**: Add to `apps/web/src-tauri/src/lib.rs`
-- **Database**: `sessions` table - app_name column
-- **macOS API**: NSWorkspace for frontmost app detection
+1. `stt-t4k` still needs the hotkey-driven runtime path wired to `SessionManager`
+2. `stt-1j5` still needs toggle-mode runtime behavior
+3. `stt-ied` reopens the frontmost-app metadata problem because the prior `3b0` implementation used the wrong macOS API
+4. `stt-8cp` depends on a trustworthy runtime status surface
 
-## Technical Requirements
-1. Use `NSWorkspace` (via Cocoa/Rust binding) to detect frontmost app
-2. Capture app name before typing begins
-3. Store in session record (app_name TEXT NULL)
-4. Best-effort - fail gracefully if detection fails
-
-## Success Criteria
-- Captures frontmost app name before typing
-- Stores in session metadata (nullable)
-- Graceful fallback when detection unavailable
-- No blocking of core PTT workflow
-
-## Entry Commands
-```bash
-cd .agents/worktrees/session-metadata
-export BEADS_NO_DAEMON=1
-bd update stt-3b0 --status=in_progress
-```
+The active source of truth is now `ptt-runtime.md`, which owns the full `stt-t4k → stt-1j5 → stt-ied → stt-8cp` lane.

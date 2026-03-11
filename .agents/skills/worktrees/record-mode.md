@@ -1,75 +1,100 @@
 # Worktree: record-mode
 
-**Plan Reference**: See [PLAN.md: Record Mode Bounds](../plan/SKILL.md#record-mode-bounds) and [PLAN.md: Audio Capture & Silence](../plan/SKILL.md#audio-capture--silence-vad-lite)
+**Plan Reference**: See [PLAN.md: Record Mode Bounds](../plan/SKILL.md#record-mode-bounds), [PLAN.md: Audio Capture & Silence](../plan/SKILL.md#audio-capture--silence-vad-lite), and [PLAN.md: UI](../plan/SKILL.md#ui-react--tanstack-router)
+
+## Purpose
+
+This worktree owns the long-form recording path end to end:
+
+1. backend capture stability
+2. safe rotation semantics
+3. `/record` route wiring to the real runtime
+4. unit coverage for chunking and rotation
+
+This lane should run **sequentially** and should not overlap with other `lib.rs`-heavy backend work such as `ptt-runtime` or `model-management`.
 
 ## Issue Chain
-- **stt-bq4** → stt-rdp → stt-83i
-- Current: stt-bq4
+
+- **stt-bq4** → stt-rdp → stt-fuc → stt-83i
+- **Current**: `stt-bq4`
+
+## Shared Hot Files
+
+- `apps/web/src-tauri/src/audio.rs`
+- `apps/web/src-tauri/src/lib.rs`
+- `apps/web/src/routes/record.tsx`
+- `apps/web/src/lib/api.ts`
 
 ## Issue: stt-bq4 - Long-form Record Mode Audio Capture
+
 - **Priority**: 1
 - **Type**: task
 
-### Description
-Per PLAN.md 'Record mode': continuous multi-hour capture/transcribe to file and DB (not typed into apps), chunked every 60s. Default 8h or 4GB per file with rotation. Audio capture continues until explicit stop. Writes to rolling .txt file under App Support.
+### Focus
 
-### What This Enables
-- Record mode for meeting notes, dictation, and long-form transcription
-- Chunked transcription to rolling files (not keystroke output)
-- No blocking during long capture sessions
+Finish the backend capture path before touching the page-level UI. The current implementation still has state split between `RecordCapture` and thread-local capture state, does not enforce chunk timing from backend preferences, and can lose the final partial buffer on stop.
 
-### Integration Points
-- **Source**: Extend `src-tauri/src/audio.rs` with record-mode capture
-- **Depends on**: `stt-rtf` (audio capture module - ready)
-- **Output**: `~/Library/Application Support/sst/transcripts/`
-- **DB**: sessions with `mode='record'`
+### Technical Targets
 
-### Technical Requirements
-1. Continuous capture until explicit stop (vs hold-to-talk release)
-2. Chunk audio every 60s for transcription
-3. Write to rolling .txt file (not typed to apps)
-4. No keystroke output in record mode
+1. Share one live capture state between the CPAL callback and `RecordCapture` methods.
+2. Enforce chunk boundaries from `prefs.record.chunk_seconds` in the backend.
+3. Flush the final buffered audio on stop instead of dropping it.
+4. Keep transcript-file writes and DB entry creation on the same path.
 
-### Success Criteria
-- Capture runs for hours without memory growth
-- Transcription chunks written to rolling file
-- Session persists in DB with mode='record'
+### Exit Criteria
 
-### Entry Commands
-```bash
-cd .agents/worktrees/record-mode
-export BEADS_NO_DAEMON=1
-bd update stt-bq4 --status=in_progress
-```
-
----
+- `get_and_clear_chunk()` reads real capture data
+- stop flushes the final chunk
+- chunk timing comes from backend state
+- record entries and transcript writes stay aligned
 
 ## Issue: stt-rdp - Record Mode File Rotation
+
 - **Priority**: 1
 - **Type**: task
-- **Blocked by**: stt-bq4
+- **Blocked by**: `stt-bq4`
 
-### Description
-Per PLAN.md 'Record Mode Bounds': auto-rotate to new file and new session row when maxHours (8) or maxFileGB (4) reached. No data loss. File rotation should trigger new session in DB.
+### Focus
 
-### Technical Requirements
-1. Rotate file on maxHours (8) OR maxFileGB (4)
-2. Create new session row on rotation
-3. No data loss during rotation
+Add safe rotation semantics only after the base capture path is trustworthy. Rotation should track file/session lifetime independently from chunk lifetime and must not lose in-flight audio or transcript text.
 
-### Links
-- PLAN.md: Record Mode Bounds
-- Related: stt-83i (unit tests)
+### Technical Targets
 
----
+1. Base `max_hours` on session/file lifetime, not the last chunk timestamp.
+2. Replace stubbed file-size tracking with a real byte count.
+3. Drain and persist buffered audio before swapping sessions/capture objects.
+4. Create the new session only after the previous one is safely finalized.
+
+## Issue: stt-fuc - Wire /record Route To Record-Mode Runtime Commands
+
+- **Priority**: 1
+- **Type**: task
+- **Blocked by**: `stt-bq4`, `stt-rdp`
+
+### Focus
+
+Replace fake `/record` session creation with the actual record-mode commands. The route should use backend runtime status, live chunk transcription, and real rotation/session state.
+
+### Technical Targets
+
+1. Start/stop recording through `start_record_mode` and `stop_record_mode`.
+2. Consume real runtime state from `get_record_status`.
+3. Show real transcript chunks instead of relying on stale open sessions.
+4. Reflect rotation count and current session from backend state.
 
 ## Issue: stt-83i - Unit Tests: Record Mode Chunking/Rotation
+
 - **Priority**: 3
 - **Type**: chore
-- **Blocked by**: stt-rdp
+- **Blocked by**: `stt-rdp`
 
-### Description
-Tests for session/file rotation, writes to rolling .txt file, no typing to apps during record mode.
+### Focus
 
-### Links
-- PLAN.md section 12: Tests
+Lock in the finalized record-mode behavior with tests only after the backend and route contracts stop moving.
+
+### Technical Targets
+
+1. Cover chunk boundary behavior.
+2. Cover rotation on both hours and file size.
+3. Assert no typing occurs during record mode.
+4. Assert transcript-file and DB behavior stay in sync across rotation.
