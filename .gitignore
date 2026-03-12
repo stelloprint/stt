@@ -52,3 +52,7 @@ temp
 # Agent Worktrees
 .agents/worktrees/*
 .agents/worktrees/
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
