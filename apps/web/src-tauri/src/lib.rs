@@ -497,12 +497,15 @@ pub fn run() {
                         log::error!("Failed to stop audio capture: {}", e);
                     }
 
-                    let prefs_clone = prefs.get();
-                    let mode = match prefs_clone.mode {
-                        prefs::ActivationMode::Hold => db::SessionMode::Hold,
-                        prefs::ActivationMode::Toggle => db::SessionMode::Toggle,
+                    let Some(mode) = session_manager.get_current_session_mode() else {
+                        log::warn!("No active session found when releasing hotkey");
+                        if let Err(e) = session_manager.end_session() {
+                            log::error!("Failed to end session: {}", e);
+                        }
+                        return;
                     };
 
+                    let prefs_clone = prefs.get();
                     let audio_data = audio.get_buffer();
                     if !audio_data.is_empty() {
                         log::info!("Transcribing {} audio samples", audio_data.len());

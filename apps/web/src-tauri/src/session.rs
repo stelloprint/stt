@@ -133,6 +133,10 @@ impl SessionManager {
     pub fn is_active(&self) -> bool {
         self.current_session.read().is_some()
     }
+
+    pub fn get_current_session_mode(&self) -> Option<crate::db::SessionMode> {
+        self.current_session.read().as_ref().map(|s| s.mode)
+    }
 }
 
 fn uuid_v4() -> String {
@@ -162,20 +166,18 @@ pub fn end_session_workflow(state: &AppState) -> Result<Option<Session>, String>
 }
 
 pub fn add_typed_entry(state: &AppState, text: &str) -> Result<Entry, String> {
-    let prefs = state.prefs.get();
-    let mode = match prefs.mode {
-        crate::prefs::ActivationMode::Hold => crate::db::SessionMode::Hold,
-        crate::prefs::ActivationMode::Toggle => crate::db::SessionMode::Toggle,
-    };
+    let mode = state
+        .session_manager
+        .get_current_session_mode()
+        .ok_or("No active session")?;
     state.session_manager.add_entry(text, true, mode)
 }
 
 pub fn add_untyped_entry(state: &AppState, text: &str) -> Result<Entry, String> {
-    let prefs = state.prefs.get();
-    let mode = match prefs.mode {
-        crate::prefs::ActivationMode::Hold => crate::db::SessionMode::Hold,
-        crate::prefs::ActivationMode::Toggle => crate::db::SessionMode::Toggle,
-    };
+    let mode = state
+        .session_manager
+        .get_current_session_mode()
+        .ok_or("No active session")?;
     state.session_manager.add_entry(text, false, mode)
 }
 
