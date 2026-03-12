@@ -4,16 +4,14 @@
 
 Each worktree represents an ongoing workstream that handles a chain of dependent issues. Agents work through the full chain sequentially.
 
-The current tracker state has several reopened issues on surfaces that were previously marked complete. The workstream plan below reflects the live `bd` dependency graph and is optimized to avoid agents colliding in `apps/web/src-tauri/src/lib.rs`, `apps/web/src-tauri/src/audio.rs`, and shared route/API contracts.
+The table below reflects the live `bd` dependency graph after code acceptance for `prefs-contract`, `typing-fallback`, and the first `permissions-safety` change. The remaining active plan is optimized to avoid agents colliding in `apps/web/src-tauri/src/lib.rs`, `apps/web/src-tauri/src/audio.rs`, and shared route/API contracts.
 
 | Worktree | Issue Chain | Status | Docs |
 |----------|-------------|--------|------|
-| ptt-runtime | stt-t4k → stt-1j5 → stt-ied → stt-8cp | Ready | [ptt-runtime.md](./ptt-runtime.md) |
+| ptt-runtime | stt-t4k → stt-a86 → stt-1j5 → stt-ied → stt-8cp | Active | [ptt-runtime.md](./ptt-runtime.md) |
 | record-mode | stt-bq4 → stt-rdp → stt-fuc → stt-83i | Ready | [record-mode.md](./record-mode.md) |
-| prefs-contract | stt-im0 → stt-ir2 | Ready | [prefs-contract.md](./prefs-contract.md) |
 | model-management | stt-bih → stt-j53 | Ready | [model-management.md](./model-management.md) |
-| permissions-safety | stt-uwb | Ready | [permissions-safety.md](./permissions-safety.md) |
-| typing-fallback | stt-3ih | Ready | [typing-fallback.md](./typing-fallback.md) |
+| permissions-safety | stt-uwb → stt-43q | Active follow-up | [permissions-safety.md](./permissions-safety.md) |
 | audio-tests | stt-28a | Ready late-stage | [audio-tests.md](./audio-tests.md) |
 | route-tests | stt-moq | Ready late-stage | [route-tests.md](./route-tests.md) |
 | manual-qa | stt-8rv | Blocked | [manual-qa.md](./manual-qa.md) |
@@ -24,21 +22,29 @@ Use these rules when assigning agents:
 
 1. Only one `lib.rs`-heavy backend stream should be active at a time.
 2. Treat `ptt-runtime`, `record-mode`, and `model-management` as serialized lanes, not fully parallel work.
-3. `prefs-contract`, `permissions-safety`, and `typing-fallback` are the safest side lanes to run in parallel with one major backend lane.
+3. `permissions-safety` is the safest remaining side lane to run in parallel with one major backend lane.
 4. `audio-tests` should wait until `audio.rs` behavior has stabilized after runtime work.
 5. `route-tests` should wait until `/settings` and `/record` are wired to the real backend contracts.
 6. `manual-qa` stays parked until its blocker set is actually closed.
 
 ## Recommended Execution Order
 
-1. `prefs-contract`, `permissions-safety`, and `typing-fallback`
-2. `ptt-runtime`
-3. `record-mode`
-4. `model-management`
-5. `audio-tests` and `route-tests`
-6. `manual-qa`
+1. Create `permissions-safety` and `ptt-runtime` now
+2. After `ptt-runtime` lands, create `record-mode`
+3. After `record-mode` stabilizes, create `model-management`
+4. After backend behavior settles, create `audio-tests` and `route-tests`
+5. Run `manual-qa` last once `stt-1j5` and `stt-fuc` are closed
 
-This order prioritizes correctness in the main push-to-talk flow first, then long-form recording, then model-management UX, and only then test hardening and cross-cutting QA.
+With all old worktrees cleared, the best next start is two lanes in parallel: the isolated `permissions-safety` follow-up and the serialized `ptt-runtime` lane. Keep `record-mode` and `model-management` queued rather than active at the same time, even if tracker status says ready, because they share backend surfaces with `ptt-runtime`.
+
+## Completed Workstreams
+
+These workstreams have accepted code and no remaining open issues in their original chain:
+
+| Worktree | Accepted Chain | State | Docs |
+|----------|----------------|-------|------|
+| prefs-contract | stt-im0 → stt-ir2 | Complete | [prefs-contract.md](./prefs-contract.md) |
+| typing-fallback | stt-3ih | Complete | [typing-fallback.md](./typing-fallback.md) |
 
 ## Retired Or Rewritten Workstreams
 
@@ -55,8 +61,10 @@ Historical completed workstreams such as `audio-pipeline`, `model-tests`, and `e
 ## Workstream Details
 
 ### ptt-runtime
-- **Chain**: stt-t4k → stt-1j5 → stt-ied → stt-8cp
-- **Current**: `stt-t4k` (Wire session/entry persistence to PTT workflow)
+- **Chain**: stt-t4k → stt-a86 → stt-1j5 → stt-ied → stt-8cp
+- **Current**: `stt-a86`
+- **Accepted**: `stt-t4k` is complete
+- **Follow-up note**: `stt-a86` is regression coverage for the persistence contract introduced by `stt-t4k` and should land before the rest of the runtime chain
 - **Hot files**: `apps/web/src-tauri/src/lib.rs`, `apps/web/src-tauri/src/session.rs`, `apps/web/src-tauri/src/keys.rs`, `apps/web/src/routes/index.tsx`
 - **Conflict note**: Serialize with `record-mode` and `model-management`
 
@@ -66,12 +74,6 @@ Historical completed workstreams such as `audio-pipeline`, `model-tests`, and `e
 - **Hot files**: `apps/web/src-tauri/src/audio.rs`, `apps/web/src-tauri/src/lib.rs`, `apps/web/src/routes/record.tsx`
 - **Conflict note**: Serialize with `ptt-runtime` and `model-management`
 
-### prefs-contract
-- **Chain**: stt-im0 → stt-ir2
-- **Current**: `stt-im0` (Diagnose current Rust test failure and stale prefs assumptions)
-- **Hot files**: `apps/web/src-tauri/src/prefs.rs`, `apps/web/src/routes/settings.tsx`
-- **Conflict note**: Safe to run alongside one major backend lane
-
 ### model-management
 - **Chain**: stt-bih → stt-j53
 - **Current**: `stt-bih` (Verify and replace placeholder Whisper model SHA-256 constants)
@@ -79,15 +81,10 @@ Historical completed workstreams such as `audio-pipeline`, `model-tests`, and `e
 - **Conflict note**: Serialize with `ptt-runtime` and `record-mode`
 
 ### permissions-safety
-- **Chain**: stt-uwb
-- **Current**: `stt-uwb` (Replace destructive permission probes with safe macOS checks)
+- **Chain**: stt-uwb → stt-43q
+- **Current**: `stt-43q`
+- **Accepted**: `stt-uwb` is complete
 - **Hot files**: `apps/web/src-tauri/src/permissions.rs`
-- **Conflict note**: Good parallel side lane
-
-### typing-fallback
-- **Chain**: stt-3ih
-- **Current**: `stt-3ih` (Fix macOS clipboard fallback to paste with Command+V)
-- **Hot files**: `apps/web/src-tauri/src/type_.rs`
 - **Conflict note**: Good parallel side lane
 
 ### audio-tests
@@ -105,5 +102,5 @@ Historical completed workstreams such as `audio-pipeline`, `model-tests`, and `e
 ### manual-qa
 - **Chain**: stt-8rv
 - **Current**: `stt-8rv` (Manual QA: hotkeys, hold/toggle, voice commands, record mode)
-- **Blockers**: `stt-1j5`, `stt-3ih`, `stt-fuc`, `stt-t4k`, `stt-uwb`
+- **Blockers**: `stt-1j5`, `stt-fuc`
 - **Note**: Cross-cutting final lane only
