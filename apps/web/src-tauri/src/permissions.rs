@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::process::Command;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PermissionState {
@@ -12,6 +11,86 @@ impl PermissionState {
     pub fn is_granted(&self) -> bool {
         matches!(self, PermissionState::Granted)
     }
+
+    pub fn is_denied(&self) -> bool {
+        matches!(self, PermissionState::Denied)
+    }
+
+    pub fn is_undetermined(&self) -> bool {
+        matches!(self, PermissionState::Undetermined)
+    }
+}
+
+impl Default for PermissionState {
+    fn default() -> Self {
+        PermissionState::Undetermined
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod macos_permissions {
+    use crate::PermissionState;
+    use objc2::rc::autoreleasepool;
+    use std::process::Command;
+
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        fn AXIsProcessTrusted() -> bool;
+    }
+
+    pub fn check_accessibility() -> PermissionState {
+        let trusted = autoreleasepool(|_pool| unsafe { AXIsProcessTrusted() });
+        if trusted {
+            PermissionState::Granted
+        } else {
+            PermissionState::Denied
+        }
+    }
+
+    pub fn check_microphone() -> PermissionState {
+        let output = Command::new("shortcuts")
+            .args(["run", "Check Microphone", "--small", "0"])
+            .output();
+
+        match output {
+            Ok(output) => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if stdout.contains("granted") || stdout.contains("1") {
+                    PermissionState::Granted
+                } else if stdout.contains("denied") || stdout.contains("0") {
+                    PermissionState::Denied
+                } else {
+                    PermissionState::Undetermined
+                }
+            }
+            Err(_) => {
+                let output = Command::new("osascript")
+                    .args([
+                        "-e",
+                        "set deviceCount to 0\ntry\n    set deviceCount to (do shell script \"/usr/bin/mikeutil -i 2>/dev/null | wc -l || echo 0\")\nend try\nreturn deviceCount",
+                    ])
+                    .output();
+
+                match output {
+                    Ok(output) => {
+                        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                        if stdout.parse::<u32>().unwrap_or(0) > 0 {
+                            PermissionState::Undetermined
+                        } else {
+                            PermissionState::Undetermined
+                        }
+                    }
+                    Err(_) => PermissionState::Undetermined,
+                }
+            }
+        }
+    }
+
+    pub fn request_microphone_permission() {
+        let _ = Command::new("osascript")
+            .args(["-e", "set micRef to (do shell script \"echo test\")"])
+            .output();
+    }
 }
 
 pub struct Permissions;
@@ -20,40 +99,7 @@ impl Permissions {
     pub fn check_microphone() -> PermissionState {
         #[cfg(target_os = "macos")]
         {
-            use std::process::Command;
-            let output = Command::new("osascript")
-                .args([
-                    "-e",
-                    "tell application \"System Events\" to (do shell script \"/usr/bin/mikeutil 2>/dev/null || echo 'no-mike'\"",
-                ])
-                .output();
-
-            if let Ok(output) = output {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                if stdout.contains("Access") {
-                    return PermissionState::Granted;
-                }
-            }
-
-            let output = Command::new("osascript")
-                .args([
-                    "-e",
-                    "set micPermission to (do shell script \"defaults read /Library/Preferences/com.apple.security.device_audio-input_enabled 2>/dev/null || echo 'undetermined'\")",
-                    "-e",
-                    "return micPermission",
-                ])
-                .output();
-
-            if let Ok(output) = output {
-                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if stdout == "1" {
-                    return PermissionState::Granted;
-                } else if stdout == "0" {
-                    return PermissionState::Denied;
-                }
-            }
-
-            PermissionState::Undetermined
+            macos_permissions::check_microphone()
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -65,20 +111,7 @@ impl Permissions {
     pub fn check_accessibility() -> PermissionState {
         #[cfg(target_os = "macos")]
         {
-            let output = Command::new("osascript")
-                .args([
-                    "-e",
-                    "tell application \"System Events\" to keystroke \"x\" using command down",
-                ])
-                .output();
-
-            if let Ok(output) = output {
-                if output.status.success() {
-                    return PermissionState::Granted;
-                }
-            }
-
-            PermissionState::Denied
+            macos_permissions::check_accessibility()
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -90,30 +123,9 @@ impl Permissions {
     pub fn request_microphone() -> Result<PermissionState, String> {
         #[cfg(target_os = "macos")]
         {
-            let output = Command::new("osascript")
-                .args([
-                    "-e",
-                    "set micRef to (do shell script \"say -v '?' 'test' 2>&1 | grep -q permission && echo 'denied' || echo 'ok'\")",
-                ])
-                .output()
-                .map_err(|e| e.to_string())?;
-
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            if stdout.contains("denied") {
-                return Ok(PermissionState::Denied);
-            }
-
-            let output = Command::new("osascript")
-                .args([
-                    "-e",
-                    "set audioInputDevices to (get (path to temporary items) as text)",
-                    "-e",
-                    "return input volume of (get volume settings)",
-                ])
-                .output()
-                .map_err(|e| e.to_string())?;
-
-            Ok(PermissionState::Granted)
+            macos_permissions::request_microphone_permission();
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            Ok(Permissions::check_microphone())
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -125,20 +137,11 @@ impl Permissions {
     pub fn request_accessibility() -> Result<PermissionState, String> {
         #[cfg(target_os = "macos")]
         {
-            let output = Command::new("osascript")
-                .args([
-                    "-e",
-                    "return \"ax:\" & (do shell script \"defaults read /Library/Preferences/com.apple.security.accessibility 2>/dev/null || echo 'missing'\")",
-                ])
-                .output()
-                .map_err(|e| e.to_string())?;
-
-            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if stdout.contains("ax:") && !stdout.contains("missing") {
+            if Permissions::check_accessibility().is_granted() {
                 return Ok(PermissionState::Granted);
             }
 
-            Command::new("open")
+            std::process::Command::new("open")
                 .args([
                     "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
                 ])
@@ -157,7 +160,7 @@ impl Permissions {
     pub fn open_microphone_settings() -> Result<(), String> {
         #[cfg(target_os = "macos")]
         {
-            Command::new("open")
+            std::process::Command::new("open")
                 .args([
                     "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
                 ])
@@ -175,7 +178,7 @@ impl Permissions {
     pub fn open_accessibility_settings() -> Result<(), String> {
         #[cfg(target_os = "macos")]
         {
-            Command::new("open")
+            std::process::Command::new("open")
                 .args([
                     "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
                 ])
@@ -188,22 +191,6 @@ impl Permissions {
         {
             Ok(())
         }
-    }
-}
-
-impl Default for PermissionState {
-    fn default() -> Self {
-        PermissionState::Undetermined
-    }
-}
-
-impl PermissionState {
-    pub fn is_denied(&self) -> bool {
-        matches!(self, PermissionState::Denied)
-    }
-
-    pub fn is_undetermined(&self) -> bool {
-        matches!(self, PermissionState::Undetermined)
     }
 }
 
