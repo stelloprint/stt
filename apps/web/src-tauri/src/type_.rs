@@ -15,6 +15,38 @@ pub enum TypeMethod {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModifierKey {
+    Control,
+    Meta,
+    Shift,
+    Alt,
+}
+
+impl ModifierKey {
+    pub fn for_clipboard_paste() -> ModifierKey {
+        ModifierKey::Meta
+    }
+
+    pub fn to_enigo_key(&self) -> Key {
+        match self {
+            ModifierKey::Control => Key::Control,
+            ModifierKey::Meta => Key::Meta,
+            ModifierKey::Shift => Key::Shift,
+            ModifierKey::Alt => Key::Alt,
+        }
+    }
+
+    pub fn bitmask(&self) -> u64 {
+        match self {
+            ModifierKey::Control => 0x02,
+            ModifierKey::Meta => 0x08,
+            ModifierKey::Shift => 0x01,
+            ModifierKey::Alt => 0x04,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContextHeuristic {
     None,
     CodeBlock,
@@ -193,13 +225,16 @@ impl Typer {
 
         std::thread::sleep(Duration::from_millis(50));
 
+        let paste_modifier = ModifierKey::for_clipboard_paste();
         let mut enigo = self.enigo.lock();
-        let _ = enigo.key(Key::Control, Press);
-        self.modifiers_held.fetch_or(0x02, Ordering::SeqCst);
+        let _ = enigo.key(paste_modifier.to_enigo_key(), Press);
+        self.modifiers_held
+            .fetch_or(paste_modifier.bitmask(), Ordering::SeqCst);
         let _ = enigo.key(Key::Unicode('v'), Click);
         std::thread::sleep(Duration::from_millis(50));
-        let _ = enigo.key(Key::Control, Release);
-        self.modifiers_held.fetch_and(!0x02, Ordering::SeqCst);
+        let _ = enigo.key(paste_modifier.to_enigo_key(), Release);
+        self.modifiers_held
+            .fetch_and(!paste_modifier.bitmask(), Ordering::SeqCst);
 
         std::thread::sleep(Duration::from_millis(50));
 
@@ -619,5 +654,49 @@ mod tests {
         };
         let ctx = Typer::detect_context_for_options(&options, "function test() { return 1; }");
         assert_eq!(ctx, ContextHeuristic::None);
+    }
+
+    #[test]
+    fn test_clipboard_paste_uses_meta_not_control() {
+        let paste_modifier = ModifierKey::for_clipboard_paste();
+        assert_eq!(
+            paste_modifier,
+            ModifierKey::Meta,
+            "Clipboard paste fallback must use Meta (Command) on macOS, not Control"
+        );
+    }
+
+    #[test]
+    fn test_clipboard_paste_modifier_to_enigo_key() {
+        let paste_modifier = ModifierKey::for_clipboard_paste();
+        assert_eq!(paste_modifier.to_enigo_key(), Key::Meta);
+    }
+
+    #[test]
+    fn test_clipboard_paste_modifier_bitmask_is_0x08() {
+        let paste_modifier = ModifierKey::for_clipboard_paste();
+        assert_eq!(
+            paste_modifier.bitmask(),
+            0x08,
+            "Meta modifier bitmask is 0x08, not 0x02 (Control)"
+        );
+    }
+
+    #[test]
+    fn test_meta_modifier_key_converts_to_enigo_meta() {
+        assert_eq!(ModifierKey::Meta.to_enigo_key(), Key::Meta);
+    }
+
+    #[test]
+    fn test_control_modifier_key_converts_to_enigo_control() {
+        assert_eq!(ModifierKey::Control.to_enigo_key(), Key::Control);
+    }
+
+    #[test]
+    fn test_modifier_keys_have_distinct_bitmasks() {
+        assert_eq!(ModifierKey::Control.bitmask(), 0x02);
+        assert_eq!(ModifierKey::Meta.bitmask(), 0x08);
+        assert_eq!(ModifierKey::Shift.bitmask(), 0x01);
+        assert_eq!(ModifierKey::Alt.bitmask(), 0x04);
     }
 }
