@@ -1,25 +1,58 @@
 #!/usr/bin/env sh
-# bd-shim v2
-# bd-hooks-version: 0.55.4
-#
-# bd (beads) pre-commit hook — thin shim
-#
-# Delegates to 'bd hook pre-commit' which contains the actual hook logic.
-# This pattern ensures hook behavior is always in sync with the installed
-# bd version — no manual updates needed.
-#
-# The 'bd hook' command supports:
-# - Per-worktree export state tracking
-# - Dolt in-process export (no lock deadlocks)
-# - Sync-branch routing
-# - Hook chaining configuration
 
-# Check if bd is available
-if ! command -v bd >/dev/null 2>&1; then
-    echo "Warning: bd command not found in PATH, skipping pre-commit hook" >&2
-    echo "  Install bd: brew install beads" >&2
-    echo "  Or add bd to your PATH" >&2
-    exit 0
+if [ "$LEFTHOOK" = "0" ] || [ "$LEFTHOOK" = "false" ]; then
+  exit 0
 fi
 
-exec bd hook pre-commit "$@"
+find_lefthook_bin() {
+  if [ -n "$LEFTHOOK_BIN" ] && [ -x "$LEFTHOOK_BIN" ]; then
+    printf '%s\n' "$LEFTHOOK_BIN"
+    return 0
+  fi
+
+  if command -v lefthook >/dev/null 2>&1; then
+    bin=$(command -v lefthook)
+    case "$bin" in
+      */node_modules/.bin/lefthook) ;;
+      */node_modules/lefthook/bin/index.js) ;;
+      *)
+        printf '%s\n' "$bin"
+        return 0
+        ;;
+    esac
+  fi
+
+  dir=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
+  os_arch=$(uname | tr '[:upper:]' '[:lower:]')
+  cpu_arch=$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/')
+
+  for candidate in \
+    "$dir/node_modules/lefthook-${os_arch}-${cpu_arch}/bin/lefthook" \
+    "$dir/node_modules/@evilmartians/lefthook/bin/lefthook-${os_arch}-${cpu_arch}/lefthook" \
+    "$dir/node_modules/@evilmartians/lefthook-installer/bin/lefthook"
+  do
+    if [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  for candidate in "$dir"/node_modules/.bun/lefthook-"${os_arch}"-"${cpu_arch}"@*/node_modules/lefthook-"${os_arch}"-"${cpu_arch}"/bin/lefthook
+  do
+    if [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+lefthook_bin=$(find_lefthook_bin)
+if [ -z "$lefthook_bin" ]; then
+  echo "Can't find a native lefthook binary in PATH or node_modules" >&2
+  echo "Install dependencies or set LEFTHOOK_BIN to the native executable" >&2
+  exit 1
+fi
+
+exec "$lefthook_bin" run pre-commit "$@"
