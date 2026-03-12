@@ -1,111 +1,61 @@
 ---
-description: Plans parallel workstreams
+description: Scheduling policy for parallel agent workstreams
 agent: build, plan
 ---
 
-# Git Worktrees
+# Workstream Scheduling Policy
 
-## Active Workstreams
+All issue state, chains, descriptions, and acceptance criteria live in the beads tracker (`bd`). This document only defines the **parallel/serial scheduling policy** that beads cannot infer on its own.
 
-Each worktree represents an ongoing workstream that handles a chain of dependent issues. Agents work through the full chain sequentially.
+Use `bd ready --json` to find unblocked work, then apply these rules to decide what is safe to run together.
 
-The table below reflects the live `bd` dependency graph after code acceptance for `prefs-contract`, `typing-fallback`, and the first `permissions-safety` change. The remaining active plan is optimized to avoid agents colliding in `apps/web/src-tauri/src/lib.rs`, `apps/web/src-tauri/src/audio.rs`, and shared route/API contracts.
+## Serialized Lanes
 
-| Worktree | Issue Chain | Status | Docs |
-|----------|-------------|--------|------|
-| ptt-runtime | stt-t4k → stt-a86 → stt-1j5 → stt-ied → stt-8cp | Active | [ptt-runtime.md](./ptt-runtime.md) |
-| record-mode | stt-bq4 → stt-rdp → stt-fuc → stt-83i | Ready | [record-mode.md](./record-mode.md) |
-| model-management | stt-bih → stt-j53 | Ready | [model-management.md](./model-management.md) |
-| permissions-safety | stt-uwb → stt-43q | Active follow-up | [permissions-safety.md](./permissions-safety.md) |
-| audio-tests | stt-28a | Ready late-stage | [audio-tests.md](./audio-tests.md) |
-| route-tests | stt-moq | Ready late-stage | [route-tests.md](./route-tests.md) |
-| manual-qa | stt-8rv | Blocked | [manual-qa.md](./manual-qa.md) |
+These three lanes share heavy write surfaces in `lib.rs`, `audio.rs`, and shared runtime state. **Only one should have an active agent at a time.**
+
+| Lane | Epic | Conflict Groups |
+|------|------|-----------------|
+| ptt-runtime | stt-jsa | tauri-lib, runtime-hotkey |
+| record-mode | stt-vxq | tauri-lib, audio-runtime, record-route |
+| model-management | stt-fm4 | tauri-lib, model-contract, settings-route |
+
+Even if `bd ready` shows issues from multiple serialized lanes, do not assign agents to more than one simultaneously.
+
+## Parallel Side Lanes
+
+These lanes touch isolated surfaces and are safe to run alongside any one serialized lane.
+
+| Lane | Epic | Notes |
+|------|------|-------|
+| permissions-safety | stt-5up | Only touches `permissions.rs` |
+| hardening (CSP/allowlist) | stt-ef6 | Only touches `tauri.conf.json` and capabilities |
+| tray-integration | stt-oo2 | Tray API, mostly new files |
+| packaging | stt-ie6 | Build verification, no source changes |
+
+## Deferred Lanes
+
+These lanes should not start until their upstream implementation surfaces stabilize.
+
+| Lane | Epic | Wait Until |
+|------|------|------------|
+| audio-tests | stt-wyr | ptt-runtime and record-mode finish changing `audio.rs` |
+| route-tests | stt-6ez | model-management and record-mode land frontend contracts |
+| manual-qa | stt-u6f | Tracker blockers on stt-8rv are all closed |
 
 ## Scheduling Rules
 
-Use these rules when assigning agents:
-
-1. Only one `lib.rs`-heavy backend stream should be active at a time.
-2. Treat `ptt-runtime`, `record-mode`, and `model-management` as serialized lanes, not fully parallel work.
-3. `permissions-safety` is the safest remaining side lane to run in parallel with one major backend lane.
-4. `audio-tests` should wait until `audio.rs` behavior has stabilized after runtime work.
-5. `route-tests` should wait until `/settings` and `/record` are wired to the real backend contracts.
-6. `manual-qa` stays parked until its blocker set is actually closed.
+1. Only one serialized lane active at a time.
+2. Up to two parallel side lanes can run alongside the active serialized lane.
+3. Deferred lanes stay parked until their wait condition is met.
+4. `manual-qa` is always last.
+5. If an agent finishes a serialized lane and another is ready, start it immediately.
+6. Check `bd ready --json` and filter by `conflict_groups` metadata before assigning.
 
 ## Recommended Execution Order
 
-1. Create `permissions-safety` and `ptt-runtime` now
-2. After `ptt-runtime` lands, create `record-mode`
-3. After `record-mode` stabilizes, create `model-management`
-4. After backend behavior settles, create `audio-tests` and `route-tests`
-5. Run `manual-qa` last once `stt-1j5` and `stt-fuc` are closed
-
-With all old worktrees cleared, the best next start is two lanes in parallel: the isolated `permissions-safety` follow-up and the serialized `ptt-runtime` lane. Keep `record-mode` and `model-management` queued rather than active at the same time, even if tracker status says ready, because they share backend surfaces with `ptt-runtime`.
-
-## Completed Workstreams
-
-These workstreams have accepted code and no remaining open issues in their original chain:
-
-| Worktree | Accepted Chain | State | Docs |
-|----------|----------------|-------|------|
-| prefs-contract | stt-im0 → stt-ir2 | Complete | [prefs-contract.md](./prefs-contract.md) |
-| typing-fallback | stt-3ih | Complete | [typing-fallback.md](./typing-fallback.md) |
-
-## Retired Or Rewritten Workstreams
-
-These workstreams should no longer be used as active lanes:
-
-| Previous Worktree | Previous State | Replacement |
-|-------------------|----------------|-------------|
-| fix-compilation-bug | Too narrow and based on stale diagnosis | `prefs-contract` |
-| session-persistence | Marked complete before the real hotkey path was wired | `ptt-runtime` |
-| model-ui | Marked complete before backend model commands and real hashes were in place | `model-management` |
-
-Historical completed workstreams such as `audio-pipeline`, `model-tests`, and `export-tests` remain useful as references, but they are no longer the source of truth for the current open issue plan.
-
-## Workstream Details
-
-### ptt-runtime
-- **Chain**: stt-t4k → stt-a86 → stt-1j5 → stt-ied → stt-8cp
-- **Current**: `stt-a86`
-- **Accepted**: `stt-t4k` is complete
-- **Follow-up note**: `stt-a86` is regression coverage for the persistence contract introduced by `stt-t4k` and should land before the rest of the runtime chain
-- **Hot files**: `apps/web/src-tauri/src/lib.rs`, `apps/web/src-tauri/src/session.rs`, `apps/web/src-tauri/src/keys.rs`, `apps/web/src/routes/index.tsx`
-- **Conflict note**: Serialize with `record-mode` and `model-management`
-
-### record-mode
-- **Chain**: stt-bq4 → stt-rdp → stt-fuc → stt-83i
-- **Current**: `stt-bq4` (Implement long-form record mode audio capture)
-- **Hot files**: `apps/web/src-tauri/src/audio.rs`, `apps/web/src-tauri/src/lib.rs`, `apps/web/src/routes/record.tsx`
-- **Conflict note**: Serialize with `ptt-runtime` and `model-management`
-
-### model-management
-- **Chain**: stt-bih → stt-j53
-- **Current**: `stt-bih` (Verify and replace placeholder Whisper model SHA-256 constants)
-- **Hot files**: `apps/web/src-tauri/src/stt.rs`, `apps/web/src-tauri/src/lib.rs`, `apps/web/src/lib/api.ts`, `apps/web/src/routes/settings.tsx`
-- **Conflict note**: Serialize with `ptt-runtime` and `record-mode`
-
-### permissions-safety
-- **Chain**: stt-uwb → stt-43q
-- **Current**: `stt-43q`
-- **Accepted**: `stt-uwb` is complete
-- **Hot files**: `apps/web/src-tauri/src/permissions.rs`
-- **Conflict note**: Good parallel side lane
-
-### audio-tests
-- **Chain**: stt-28a
-- **Current**: `stt-28a` (Unit tests: audio capture and silence detection)
-- **Hot files**: `apps/web/src-tauri/src/audio.rs`
-- **Conflict note**: Defer until runtime/audio behavior stops moving
-
-### route-tests
-- **Chain**: stt-moq
-- **Current**: `stt-moq` (Replace placeholder route tests with real route and API wiring coverage)
-- **Hot files**: `apps/web/src/routes/`, `apps/web/src/test/mocks.ts`, `apps/web/src/lib/api.ts`
-- **Conflict note**: Defer until `model-management` and `record-mode` frontend contracts are real
-
-### manual-qa
-- **Chain**: stt-8rv
-- **Current**: `stt-8rv` (Manual QA: hotkeys, hold/toggle, voice commands, record mode)
-- **Blockers**: `stt-1j5`, `stt-fuc`
-- **Note**: Cross-cutting final lane only
+1. **Now**: `ptt-runtime` (serialized) + `permissions-safety` (parallel side)
+2. **After ptt-runtime progresses past stt-1j5**: `record-mode` can start (serialized)
+3. **After record-mode stabilizes**: `model-management` (serialized)
+4. **After backend surfaces settle**: `audio-tests` + `route-tests` (parallel with each other)
+5. **Last**: `manual-qa` once all its tracker blockers close
+6. **Anytime**: `hardening`, `tray-integration`, `packaging` as capacity allows

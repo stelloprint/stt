@@ -246,18 +246,11 @@ sequenceDiagram
 - macOS category: Productivity
 - Entitlements: microphone, accessibility; no network
 
-## Implementation Tasks (Worktrees)
+## Implementation Tasks
 
-See [.agents/skills/workstreams/SKILL.md](../workstreams/SKILL.md) for active workstreams and issue chains.
+All work is tracked in the beads issue tracker (`bd`). Use `bd ready` to find available work and `bd show <epic-id>` to see workstream details.
 
-| Worktree | Current Issue | Documentation |
-|----------|---------------|---------------|
-| audio-pipeline | [stt-rtf](../workstreams/audio-capture.md) | [audio-capture.md](../workstreams/audio-capture.md) |
-| session-persistence | [stt-3b0](../workstreams/session-persistence.md) | [session-persistence.md](../workstreams/session-persistence.md) |
-| model-tests | [stt-t00](../workstreams/model-tests.md) | [model-tests.md](../workstreams/model-tests.md) |
-| export-tests | [stt-xz0](../workstreams/export-tests.md) | [export-tests.md](../workstreams/export-tests.md) |
-| record-mode | stt-rtf → stt-bq4 (blocked) | [record-mode.md](../workstreams/record-mode.md) |
-| model-ui | stt-rtf → stt-j53 (blocked) | [model-ui.md](../workstreams/model-ui.md) |
+See [.agents/skills/workstreams/SKILL.md](../workstreams/SKILL.md) for parallel/serial scheduling policy.
 
 ## Export Format Details
 
@@ -281,19 +274,16 @@ The repo is initialized as a Turborepo monorepo with:
 - `apps/web/` - Tauri + React app (src-tauri embedded)
 - `packages/config/` - shared config package (placeholder)
 - `packages/env/` - env types package
-- `.agents/skills/workstreams/` - workstream documentation (see [SKILL.md](../workstreams/SKILL.md))
 
-## After Push (Next Actions the Agent Can Implement)
+## Starting Work
 
-Start work by entering a worktree and claiming the next ready issue:
+Create a worktree and claim a ready issue:
 
 ```bash
-task.sh start audio-pipeline
-cd .agents/skills/workstreams
+task.sh start <task-id-descriptive-name>
 bd ready
+bd update <id> --status=in_progress
 ```
-
-See [.agents/skills/workstreams/SKILL.md](../workstreams/SKILL.md) for the full list of worktrees and their issue chains.
 
 ## QA Checklist
 
