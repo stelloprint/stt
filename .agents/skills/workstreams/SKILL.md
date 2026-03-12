@@ -1,3 +1,8 @@
+---
+description: Plans parallel workstreams
+agent: build, plan
+---
+
 # Git Worktrees
 
 ## Active Workstreams

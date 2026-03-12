@@ -1,3 +1,9 @@
+---
+description: The planning document for the STT app
+agent: build, plan
+---
+
+
 # Private STT
 
 Small, secure, no-network, system-wide push‑to‑talk speech‑to‑text that types keystrokes in any app (including Cursor). Built with Tauri (TypeScript UI + Rust core) and whisper.cpp via whisper‑rs. All processing on-device; no sockets; no external services.
