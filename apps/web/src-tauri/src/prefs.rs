@@ -56,9 +56,15 @@ pub fn validate_preferences(prefs: &Preferences) -> Result<(), PrefsError> {
             || map.tab.is_empty()
             || map.period.is_empty()
             || map.comma.is_empty()
+            || map.colon.is_empty()
+            || map.semicolon.is_empty()
+            || map.open_quote.is_empty()
+            || map.close_quote.is_empty()
+            || map.backtick.is_empty()
+            || map.code_block.is_empty()
         {
             return Err(PrefsError::Validation(
-                "Voice command mappings cannot be empty when enabled".to_string(),
+                "All voice command mappings must be non-empty when enabled".to_string(),
             ));
         }
     }
@@ -244,6 +250,17 @@ impl Prefs {
     pub fn new() -> Result<Self, PrefsError> {
         let config_path = Self::get_config_path()?;
         let prefs = Self::load_from_file(&config_path).unwrap_or_default();
+
+        if let Err(e) = validate_preferences(&prefs) {
+            eprintln!(
+                "WARN: persisted preferences failed validation ({}) - using defaults",
+                e
+            );
+            return Ok(Self {
+                inner: RwLock::new(Preferences::default()),
+                config_path,
+            });
+        }
 
         Ok(Self {
             inner: RwLock::new(prefs),
@@ -446,7 +463,48 @@ mod tests {
         prefs.voice_commands.map.newline = String::new();
         let result = validate_preferences(&prefs);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Voice command"));
+        assert!(result.unwrap_err().to_string().contains("voice command"));
+    }
+
+    #[test]
+    fn test_validation_voice_commands_all_fields_checked() {
+        let fields = [
+            "newline",
+            "new_paragraph",
+            "tab",
+            "period",
+            "comma",
+            "colon",
+            "semicolon",
+            "open_quote",
+            "close_quote",
+            "backtick",
+            "code_block",
+        ];
+        for field in fields {
+            let mut prefs = Preferences::default();
+            prefs.voice_commands.enabled = true;
+            match field {
+                "newline" => prefs.voice_commands.map.newline = String::new(),
+                "new_paragraph" => prefs.voice_commands.map.new_paragraph = String::new(),
+                "tab" => prefs.voice_commands.map.tab = String::new(),
+                "period" => prefs.voice_commands.map.period = String::new(),
+                "comma" => prefs.voice_commands.map.comma = String::new(),
+                "colon" => prefs.voice_commands.map.colon = String::new(),
+                "semicolon" => prefs.voice_commands.map.semicolon = String::new(),
+                "open_quote" => prefs.voice_commands.map.open_quote = String::new(),
+                "close_quote" => prefs.voice_commands.map.close_quote = String::new(),
+                "backtick" => prefs.voice_commands.map.backtick = String::new(),
+                "code_block" => prefs.voice_commands.map.code_block = String::new(),
+                _ => unreachable!(),
+            }
+            let result = validate_preferences(&prefs);
+            assert!(
+                result.is_err(),
+                "Validation should fail when {} is empty",
+                field
+            );
+        }
     }
 
     #[test]
@@ -495,3 +553,30 @@ mod tests {
         assert_eq!(json, "\"high\"");
     }
 }
+
+    #[test]
+    fn test_validation_both_hotkeys_disabled() {
+        let mut prefs = Preferences::default();
+        prefs.hotkeys.left_chord = false;
+        prefs.hotkeys.right_chord = false;
+        let result = validate_preferences(&prefs);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validation_max_file_gb_exceeds_limit() {
+        let mut prefs = Preferences::default();
+        prefs.record.max_file_gb = 32;
+        let result = validate_preferences(&prefs);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validation_silence_seconds_out_of_range() {
+        let mut prefs = Preferences::default();
+        prefs.silence_seconds = 100.0;
+        assert!(validate_preferences(&prefs).is_err());
+
+        prefs.silence_seconds = 0.1;
+        assert!(validate_preferences(&prefs).is_err());
+    }
