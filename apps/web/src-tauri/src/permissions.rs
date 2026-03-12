@@ -31,7 +31,6 @@ impl Default for PermissionState {
 mod macos_permissions {
     use crate::PermissionState;
     use objc2::rc::autoreleasepool;
-    use std::process::Command;
 
     #[link(name = "ApplicationServices", kind = "framework")]
     extern "C" {
@@ -48,48 +47,7 @@ mod macos_permissions {
     }
 
     pub fn check_microphone() -> PermissionState {
-        let output = Command::new("shortcuts")
-            .args(["run", "Check Microphone", "--small", "0"])
-            .output();
-
-        match output {
-            Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                if stdout.contains("granted") || stdout.contains("1") {
-                    PermissionState::Granted
-                } else if stdout.contains("denied") || stdout.contains("0") {
-                    PermissionState::Denied
-                } else {
-                    PermissionState::Undetermined
-                }
-            }
-            Err(_) => {
-                let output = Command::new("osascript")
-                    .args([
-                        "-e",
-                        "set deviceCount to 0\ntry\n    set deviceCount to (do shell script \"/usr/bin/mikeutil -i 2>/dev/null | wc -l || echo 0\")\nend try\nreturn deviceCount",
-                    ])
-                    .output();
-
-                match output {
-                    Ok(output) => {
-                        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                        if stdout.parse::<u32>().unwrap_or(0) > 0 {
-                            PermissionState::Undetermined
-                        } else {
-                            PermissionState::Undetermined
-                        }
-                    }
-                    Err(_) => PermissionState::Undetermined,
-                }
-            }
-        }
-    }
-
-    pub fn request_microphone_permission() {
-        let _ = Command::new("osascript")
-            .args(["-e", "set micRef to (do shell script \"echo test\")"])
-            .output();
+        PermissionState::Undetermined
     }
 }
 
@@ -123,9 +81,14 @@ impl Permissions {
     pub fn request_microphone() -> Result<PermissionState, String> {
         #[cfg(target_os = "macos")]
         {
-            macos_permissions::request_microphone_permission();
-            std::thread::sleep(std::time::Duration::from_millis(500));
-            Ok(Permissions::check_microphone())
+            std::process::Command::new("open")
+                .args([
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+                ])
+                .spawn()
+                .map_err(|e| e.to_string())?;
+
+            Ok(PermissionState::Undetermined)
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -335,22 +298,58 @@ mod tests {
         assert!(!PermissionState::Denied.is_undetermined());
     }
 
-    #[test]
-    fn test_check_microphone_returns_state() {
-        let state = Permissions::check_microphone();
-        matches!(
-            state,
-            PermissionState::Granted | PermissionState::Denied | PermissionState::Undetermined
-        );
+    #[cfg(target_os = "macos")]
+    mod macos_tests {
+        use super::*;
+
+        #[test]
+        fn test_check_microphone_returns_undetermined() {
+            let state = Permissions::check_microphone();
+            assert_eq!(state, PermissionState::Undetermined);
+        }
+
+        #[test]
+        fn test_check_accessibility_uses_safe_api() {
+            let state = Permissions::check_accessibility();
+            assert!(
+                state == PermissionState::Granted || state == PermissionState::Denied,
+                "Accessibility check should return a definitive result"
+            );
+        }
+
+        #[test]
+        fn test_microphone_request_opens_settings() {
+            let result = Permissions::request_microphone();
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), PermissionState::Undetermined);
+        }
+
+        #[test]
+        fn test_accessibility_request_checks_first() {
+            let before = Permissions::check_accessibility();
+            let result = Permissions::request_accessibility();
+            assert!(result.is_ok());
+            if before.is_granted() {
+                assert_eq!(result.unwrap(), PermissionState::Granted);
+            }
+        }
     }
 
-    #[test]
-    fn test_check_accessibility_returns_state() {
-        let state = Permissions::check_accessibility();
-        matches!(
-            state,
-            PermissionState::Granted | PermissionState::Denied | PermissionState::Undetermined
-        );
+    #[cfg(not(target_os = "macos"))]
+    mod non_macos_tests {
+        use super::*;
+
+        #[test]
+        fn test_check_microphone_returns_undetermined_on_non_macos() {
+            let state = Permissions::check_microphone();
+            assert_eq!(state, PermissionState::Undetermined);
+        }
+
+        #[test]
+        fn test_check_accessibility_returns_undetermined_on_non_macos() {
+            let state = Permissions::check_accessibility();
+            assert_eq!(state, PermissionState::Undetermined);
+        }
     }
 
     #[test]
@@ -361,16 +360,9 @@ mod tests {
     }
 
     #[test]
-    fn test_permission_status_check_all() {
+    fn test_permission_status_check_all_undetermined_mic() {
         let status = PermissionStatus::check_all();
-        matches!(
-            status.microphone,
-            PermissionState::Granted | PermissionState::Denied | PermissionState::Undetermined
-        );
-        matches!(
-            status.accessibility,
-            PermissionState::Granted | PermissionState::Denied | PermissionState::Undetermined
-        );
+        assert_eq!(status.microphone, PermissionState::Undetermined);
     }
 
     #[test]
