@@ -497,10 +497,15 @@ pub fn run() {
                         log::error!("Failed to stop audio capture: {}", e);
                     }
 
+                    let prefs_clone = prefs.get();
+                    let mode = match prefs_clone.mode {
+                        prefs::ActivationMode::Hold => db::SessionMode::Hold,
+                        prefs::ActivationMode::Toggle => db::SessionMode::Toggle,
+                    };
+
                     let audio_data = audio.get_buffer();
                     if !audio_data.is_empty() {
                         log::info!("Transcribing {} audio samples", audio_data.len());
-                        let prefs_clone = prefs.get();
                         match stt.transcribe(&audio_data, &prefs_clone) {
                             Ok(result) => {
                                 log::info!("Transcription result: {}", result.text);
@@ -515,20 +520,36 @@ pub fn run() {
                                     };
                                     match type_::Typer::new(typer_options) {
                                         Ok(typer) => {
-                                            if let Err(e) = typer.type_text(&result.text) {
+                                            let typing_result = typer.type_text(&result.text);
+                                            if let Err(e) = typing_result {
                                                 log::error!("Failed to type text: {}", e);
-                                            }
-
-                                            if let Err(e) = session_manager.add_entry(
-                                                &result.text,
-                                                true,
-                                                db::SessionMode::Hold,
-                                            ) {
-                                                log::error!("Failed to add typed entry: {}", e);
+                                                if let Err(e) = session_manager.add_entry(
+                                                    &result.text,
+                                                    false,
+                                                    mode,
+                                                ) {
+                                                    log::error!(
+                                                        "Failed to add untyped entry: {}",
+                                                        e
+                                                    );
+                                                }
+                                            } else {
+                                                if let Err(e) = session_manager.add_entry(
+                                                    &result.text,
+                                                    true,
+                                                    mode,
+                                                ) {
+                                                    log::error!("Failed to add typed entry: {}", e);
+                                                }
                                             }
                                         }
                                         Err(e) => {
                                             log::error!("Failed to create typer: {}", e);
+                                            if let Err(e) =
+                                                session_manager.add_entry(&result.text, false, mode)
+                                            {
+                                                log::error!("Failed to add untyped entry: {}", e);
+                                            }
                                         }
                                     }
                                 }
