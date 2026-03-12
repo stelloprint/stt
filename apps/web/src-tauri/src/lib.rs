@@ -471,11 +471,22 @@ pub fn run() {
             let audio = Arc::clone(&audio);
             let stt = Arc::clone(&stt_engine);
             let prefs = Arc::clone(&prefs);
-            let _db = Arc::clone(&db);
+            let session_manager = Arc::clone(&session_manager);
 
             k.on_activation(move |state, _source| match state {
                 ActivationState::Active => {
                     log::info!("Hotkey activated - starting audio capture");
+
+                    let prefs = prefs.get();
+                    let mode = match prefs.mode {
+                        prefs::ActivationMode::Hold => db::SessionMode::Hold,
+                        prefs::ActivationMode::Toggle => db::SessionMode::Toggle,
+                    };
+
+                    if let Err(e) = session_manager.start_session(mode, &prefs, None) {
+                        log::error!("Failed to create session: {}", e);
+                    }
+
                     if let Err(e) = audio.start() {
                         log::error!("Failed to start audio capture: {}", e);
                     }
@@ -486,22 +497,62 @@ pub fn run() {
                         log::error!("Failed to stop audio capture: {}", e);
                     }
 
+                    let Some(mode) = session_manager.get_current_session_mode() else {
+                        log::warn!("No active session found when releasing hotkey");
+                        if let Err(e) = session_manager.end_session() {
+                            log::error!("Failed to end session: {}", e);
+                        }
+                        return;
+                    };
+
+                    let prefs_clone = prefs.get();
                     let audio_data = audio.get_buffer();
                     if !audio_data.is_empty() {
                         log::info!("Transcribing {} audio samples", audio_data.len());
-                        let prefs_clone = prefs.get();
                         match stt.transcribe(&audio_data, &prefs_clone) {
                             Ok(result) => {
                                 log::info!("Transcription result: {}", result.text);
                                 if !result.text.is_empty() {
-                                    match Typer::with_defaults() {
+                                    let typer_options = type_::TypeOptions {
+                                        method: type_::TypeMethod::Keystroke,
+                                        throttle_ms: prefs_clone.typing.throttle_ms as u64,
+                                        newline_append: prefs_clone.typing.newline_at_end,
+                                        clipboard_fallback: true,
+                                        detect_code_context: true,
+                                        detect_password_fields: true,
+                                    };
+                                    match type_::Typer::new(typer_options) {
                                         Ok(typer) => {
-                                            if let Err(e) = typer.type_text(&result.text) {
+                                            let typing_result = typer.type_text(&result.text);
+                                            if let Err(e) = typing_result {
                                                 log::error!("Failed to type text: {}", e);
+                                                if let Err(e) = session_manager.add_entry(
+                                                    &result.text,
+                                                    false,
+                                                    mode,
+                                                ) {
+                                                    log::error!(
+                                                        "Failed to add untyped entry: {}",
+                                                        e
+                                                    );
+                                                }
+                                            } else {
+                                                if let Err(e) = session_manager.add_entry(
+                                                    &result.text,
+                                                    true,
+                                                    mode,
+                                                ) {
+                                                    log::error!("Failed to add typed entry: {}", e);
+                                                }
                                             }
                                         }
                                         Err(e) => {
                                             log::error!("Failed to create typer: {}", e);
+                                            if let Err(e) =
+                                                session_manager.add_entry(&result.text, false, mode)
+                                            {
+                                                log::error!("Failed to add untyped entry: {}", e);
+                                            }
                                         }
                                     }
                                 }
@@ -513,6 +564,10 @@ pub fn run() {
                                 log::error!("Transcription failed: {}", e);
                             }
                         }
+                    }
+
+                    if let Err(e) = session_manager.end_session() {
+                        log::error!("Failed to end session: {}", e);
                     }
                 }
             });

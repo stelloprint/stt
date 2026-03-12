@@ -133,6 +133,10 @@ impl SessionManager {
     pub fn is_active(&self) -> bool {
         self.current_session.read().is_some()
     }
+
+    pub fn get_current_session_mode(&self) -> Option<crate::db::SessionMode> {
+        self.current_session.read().as_ref().map(|s| s.mode)
+    }
 }
 
 fn uuid_v4() -> String {
@@ -141,8 +145,10 @@ fn uuid_v4() -> String {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let random: u64 = (timestamp as u64) ^ (std::process::id() as u64 * 0x517cc1b727220a95);
-    format!("{:016x}-{:04x}", timestamp, random as u16)
+    let timestamp_lower = (timestamp & 0xFFFFFFFFFFFFFFFF) as u64;
+    let pid = std::process::id() as u64;
+    let random: u64 = timestamp_lower.wrapping_mul(pid.wrapping_add(1));
+    format!("{:016x}-{:04x}", timestamp_lower, random as u16)
 }
 
 pub fn create_session_workflow(
@@ -160,20 +166,18 @@ pub fn end_session_workflow(state: &AppState) -> Result<Option<Session>, String>
 }
 
 pub fn add_typed_entry(state: &AppState, text: &str) -> Result<Entry, String> {
-    let prefs = state.prefs.get();
-    let mode = match prefs.mode {
-        crate::prefs::ActivationMode::Hold => crate::db::SessionMode::Hold,
-        crate::prefs::ActivationMode::Toggle => crate::db::SessionMode::Toggle,
-    };
+    let mode = state
+        .session_manager
+        .get_current_session_mode()
+        .ok_or("No active session")?;
     state.session_manager.add_entry(text, true, mode)
 }
 
 pub fn add_untyped_entry(state: &AppState, text: &str) -> Result<Entry, String> {
-    let prefs = state.prefs.get();
-    let mode = match prefs.mode {
-        crate::prefs::ActivationMode::Hold => crate::db::SessionMode::Hold,
-        crate::prefs::ActivationMode::Toggle => crate::db::SessionMode::Toggle,
-    };
+    let mode = state
+        .session_manager
+        .get_current_session_mode()
+        .ok_or("No active session")?;
     state.session_manager.add_entry(text, false, mode)
 }
 
@@ -250,5 +254,134 @@ pub fn end_record_session(state: &crate::AppState) -> Result<Option<crate::db::S
         Ok(updated)
     } else {
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Database;
+
+    fn test_prefs() -> Preferences {
+        Preferences::default()
+    }
+
+    #[test]
+    fn test_hold_mode_session_persists_hold_source_entry() {
+        let db = Database::new_in_memory().unwrap();
+        let manager = SessionManager::new(Arc::new(db));
+
+        let prefs = test_prefs();
+        manager
+            .start_session(crate::db::SessionMode::Hold, &prefs, None)
+            .unwrap();
+
+        manager
+            .add_entry("hello world", true, crate::db::SessionMode::Hold)
+            .unwrap();
+
+        let ended = manager.end_session().unwrap().unwrap();
+        assert_eq!(ended.mode, crate::db::SessionMode::Hold);
+        assert!(ended.chars_count > 0);
+        assert!(ended.words_count > 0);
+    }
+
+    #[test]
+    fn test_toggle_mode_session_persists_toggle_source_entry() {
+        let db = Database::new_in_memory().unwrap();
+        let manager = SessionManager::new(Arc::new(db));
+
+        let prefs = test_prefs();
+        manager
+            .start_session(crate::db::SessionMode::Toggle, &prefs, None)
+            .unwrap();
+
+        manager
+            .add_entry("testing toggle", true, crate::db::SessionMode::Toggle)
+            .unwrap();
+
+        let ended = manager.end_session().unwrap().unwrap();
+        assert_eq!(ended.mode, crate::db::SessionMode::Toggle);
+    }
+
+    #[test]
+    fn test_untyped_entry_persists_correctly() {
+        let db = Database::new_in_memory().unwrap();
+        let manager = SessionManager::new(Arc::new(db));
+
+        let prefs = test_prefs();
+        manager
+            .start_session(crate::db::SessionMode::Hold, &prefs, None)
+            .unwrap();
+
+        manager
+            .add_entry("untyped text", false, crate::db::SessionMode::Hold)
+            .unwrap();
+
+        let ended = manager.end_session().unwrap().unwrap();
+        assert_eq!(ended.chars_count, 12);
+        assert_eq!(ended.words_count, 2);
+    }
+
+    #[test]
+    fn test_session_totals_computed_from_entries() {
+        let db = Database::new_in_memory().unwrap();
+        let manager = SessionManager::new(Arc::new(db));
+
+        let prefs = test_prefs();
+        manager
+            .start_session(crate::db::SessionMode::Hold, &prefs, None)
+            .unwrap();
+
+        manager
+            .add_entry("hello", true, crate::db::SessionMode::Hold)
+            .unwrap();
+        manager
+            .add_entry("world", true, crate::db::SessionMode::Hold)
+            .unwrap();
+
+        let ended = manager.end_session().unwrap().unwrap();
+        assert_eq!(ended.chars_count, 10);
+        assert_eq!(ended.words_count, 2);
+    }
+
+    #[test]
+    fn test_mixed_typed_untyped_entries() {
+        let db = Database::new_in_memory().unwrap();
+        let manager = SessionManager::new(Arc::new(db));
+
+        let prefs = test_prefs();
+        manager
+            .start_session(crate::db::SessionMode::Hold, &prefs, None)
+            .unwrap();
+
+        manager
+            .add_entry("typed content", true, crate::db::SessionMode::Hold)
+            .unwrap();
+        manager
+            .add_entry("untyped content", false, crate::db::SessionMode::Hold)
+            .unwrap();
+
+        let ended = manager.end_session().unwrap().unwrap();
+        assert_eq!(ended.chars_count, 28);
+        assert_eq!(ended.words_count, 4);
+    }
+
+    #[test]
+    fn test_end_session_without_active_session_returns_none() {
+        let db = Database::new_in_memory().unwrap();
+        let manager = SessionManager::new(Arc::new(db));
+
+        let result = manager.end_session().unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_add_entry_without_active_session_returns_error() {
+        let db = Database::new_in_memory().unwrap();
+        let manager = SessionManager::new(Arc::new(db));
+
+        let result = manager.add_entry("test", true, crate::db::SessionMode::Hold);
+        assert!(result.is_err());
     }
 }
