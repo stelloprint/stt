@@ -22,6 +22,8 @@
 {"issue_id":"stt-527","label":"qa"}
 {"issue_id":"stt-5up","label":"backend"}
 {"issue_id":"stt-5up","label":"safe-parallel"}
+{"issue_id":"stt-5up.1","label":"backend"}
+{"issue_id":"stt-5up.1","label":"safe-parallel"}
 {"issue_id":"stt-6a1","label":"qa"}
 {"issue_id":"stt-6ez","label":"frontend"}
 {"issue_id":"stt-6ez","label":"qa"}
@@ -53,11 +55,15 @@
 {"issue_id":"stt-btc","label":"backend"}
 {"issue_id":"stt-ces","label":"backend"}
 {"issue_id":"stt-ces","label":"qa"}
+{"issue_id":"stt-ef6","label":"backend"}
+{"issue_id":"stt-ef6","label":"qa"}
 {"issue_id":"stt-eov","label":"qa"}
 {"issue_id":"stt-fm4","label":"backend"}
 {"issue_id":"stt-fm4","label":"integration"}
 {"issue_id":"stt-fuc","label":"fullstack"}
 {"issue_id":"stt-fuc","label":"integration"}
+{"issue_id":"stt-ie6","label":"backend"}
+{"issue_id":"stt-ie6","label":"qa"}
 {"issue_id":"stt-ied","label":"backend"}
 {"issue_id":"stt-im0","label":"backend"}
 {"issue_id":"stt-im0","label":"safe-parallel"}
@@ -74,6 +80,8 @@
 {"issue_id":"stt-moq","label":"qa"}
 {"issue_id":"stt-o2r","label":"backend"}
 {"issue_id":"stt-o2r","label":"qa"}
+{"issue_id":"stt-oo2","label":"backend"}
+{"issue_id":"stt-oo2","label":"frontend"}
 {"issue_id":"stt-pmb","label":"backend"}
 {"issue_id":"stt-pmb","label":"integration"}
 {"issue_id":"stt-q5z","label":"docs"}
@@ -92,6 +100,9 @@
 {"issue_id":"stt-uwb","label":"safe-parallel"}
 {"issue_id":"stt-vxq","label":"backend"}
 {"issue_id":"stt-vxq","label":"integration"}
+{"issue_id":"stt-vxq.1","label":"backend"}
+{"issue_id":"stt-vxq.1","label":"cleanup"}
+{"issue_id":"stt-vxq.1","label":"integration"}
 {"issue_id":"stt-wmu","label":"frontend"}
 {"issue_id":"stt-wmu","label":"qa"}
 {"issue_id":"stt-wow","label":"fullstack"}
