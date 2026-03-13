@@ -485,10 +485,21 @@ mod tests {
 
         let entries = db.get_entries_by_session(&session.id).unwrap();
         assert_eq!(entries.len(), 2);
-        assert!(entries[0].typed);
-        assert!(!entries[1].typed);
-        assert_eq!(entries[0].source, crate::db::SessionMode::Hold);
-        assert_eq!(entries[1].source, crate::db::SessionMode::Hold);
+
+        // Find entries by text content to avoid order dependence
+        let typed_entry = entries
+            .iter()
+            .find(|e| e.text == "typed hold")
+            .expect("typed entry not found");
+        let untyped_entry = entries
+            .iter()
+            .find(|e| e.text == "untyped hold")
+            .expect("untyped entry not found");
+
+        assert!(typed_entry.typed);
+        assert_eq!(typed_entry.source, crate::db::SessionMode::Hold);
+        assert!(!untyped_entry.typed);
+        assert_eq!(untyped_entry.source, crate::db::SessionMode::Hold);
     }
 
     #[test]
