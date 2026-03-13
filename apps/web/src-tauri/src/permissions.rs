@@ -41,6 +41,9 @@ mod macos_permissions {
         fn AXIsProcessTrusted() -> bool;
     }
 
+    #[link(name = "AVFoundation", kind = "framework")]
+    extern "C" {}
+
     pub fn check_accessibility() -> PermissionState {
         let trusted = autoreleasepool(|_pool| unsafe { AXIsProcessTrusted() });
         if trusted {
@@ -61,7 +64,7 @@ mod macos_permissions {
         let av_class = av_class.unwrap();
 
         let status = autoreleasepool(|_pool| unsafe {
-            let media_type = NSString::from_str("AVMediaTypeAudio");
+            let media_type: Retained<NSString> = Retained::from(NSString::from_str("soun"));
             let result: Result<i32, Option<Retained<Exception>>> = objc2::exception::catch(
                 || msg_send![av_class, authorizationStatusForMediaType: &*media_type],
             );
