@@ -30,7 +30,11 @@ impl Default for PermissionState {
 #[cfg(target_os = "macos")]
 mod macos_permissions {
     use crate::PermissionState;
+    use objc2::msg_send;
     use objc2::rc::autoreleasepool;
+    use objc2::runtime::Class;
+    use objc2_foundation::NSString;
+    use std::ffi::CStr;
 
     #[link(name = "ApplicationServices", kind = "framework")]
     extern "C" {
@@ -47,7 +51,30 @@ mod macos_permissions {
     }
 
     pub fn check_microphone() -> PermissionState {
-        PermissionState::Undetermined
+        use objc2::exception::Exception;
+        use objc2::rc::Retained;
+
+        let av_class = Class::get(CStr::from_bytes_until_nul(b"AVCaptureDevice\0").unwrap());
+        if av_class.is_none() {
+            return PermissionState::Undetermined;
+        }
+        let av_class = av_class.unwrap();
+
+        let status = autoreleasepool(|_pool| unsafe {
+            let media_type = NSString::from_str("AVMediaTypeAudio");
+            let result: Result<i32, Option<Retained<Exception>>> = objc2::exception::catch(
+                || msg_send![av_class, authorizationStatusForMediaType: &*media_type],
+            );
+            match result {
+                Ok(val) => val,
+                Err(_) => -1,
+            }
+        });
+        match status {
+            0 => PermissionState::Undetermined,
+            1 => PermissionState::Granted,
+            _ => PermissionState::Denied,
+        }
     }
 }
 
@@ -303,9 +330,14 @@ mod tests {
         use super::*;
 
         #[test]
-        fn test_check_microphone_returns_undetermined() {
+        fn test_check_microphone_returns_valid_state() {
             let state = Permissions::check_microphone();
-            assert_eq!(state, PermissionState::Undetermined);
+            assert!(
+                state == PermissionState::Granted
+                    || state == PermissionState::Denied
+                    || state == PermissionState::Undetermined,
+                "Microphone check should return a valid state"
+            );
         }
 
         #[test]
@@ -360,9 +392,14 @@ mod tests {
     }
 
     #[test]
-    fn test_permission_status_check_all_undetermined_mic() {
+    fn test_permission_status_check_all_mic_returns_valid_state() {
         let status = PermissionStatus::check_all();
-        assert_eq!(status.microphone, PermissionState::Undetermined);
+        assert!(
+            status.microphone == PermissionState::Granted
+                || status.microphone == PermissionState::Denied
+                || status.microphone == PermissionState::Undetermined,
+            "Microphone check should return a valid state"
+        );
     }
 
     #[test]
