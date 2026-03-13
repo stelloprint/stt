@@ -384,4 +384,195 @@ mod tests {
         let result = manager.add_entry("test", true, crate::db::SessionMode::Hold);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_persisted_entry_source_is_hold_for_hold_session() {
+        let db = Arc::new(Database::new_in_memory().unwrap());
+        let manager = SessionManager::new(db.clone());
+
+        let prefs = test_prefs();
+        let session = manager
+            .start_session(crate::db::SessionMode::Hold, &prefs, None)
+            .unwrap();
+
+        manager
+            .add_entry("hold entry", true, crate::db::SessionMode::Hold)
+            .unwrap();
+
+        let entries = db.get_entries_by_session(&session.id).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].source, crate::db::SessionMode::Hold);
+    }
+
+    #[test]
+    fn test_persisted_entry_source_is_toggle_for_toggle_session() {
+        let db = Arc::new(Database::new_in_memory().unwrap());
+        let manager = SessionManager::new(db.clone());
+
+        let prefs = test_prefs();
+        let session = manager
+            .start_session(crate::db::SessionMode::Toggle, &prefs, None)
+            .unwrap();
+
+        manager
+            .add_entry("toggle entry", true, crate::db::SessionMode::Toggle)
+            .unwrap();
+
+        let entries = db.get_entries_by_session(&session.id).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].source, crate::db::SessionMode::Toggle);
+    }
+
+    #[test]
+    fn test_persisted_entry_typed_true_for_typing_success() {
+        let db = Arc::new(Database::new_in_memory().unwrap());
+        let manager = SessionManager::new(db.clone());
+
+        let prefs = test_prefs();
+        let session = manager
+            .start_session(crate::db::SessionMode::Hold, &prefs, None)
+            .unwrap();
+
+        manager
+            .add_entry("typed text", true, crate::db::SessionMode::Hold)
+            .unwrap();
+
+        let entries = db.get_entries_by_session(&session.id).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].typed);
+    }
+
+    #[test]
+    fn test_persisted_entry_typed_false_for_typing_fallback() {
+        let db = Arc::new(Database::new_in_memory().unwrap());
+        let manager = SessionManager::new(db.clone());
+
+        let prefs = test_prefs();
+        let session = manager
+            .start_session(crate::db::SessionMode::Hold, &prefs, None)
+            .unwrap();
+
+        manager
+            .add_entry(
+                "fallback text preserved",
+                false,
+                crate::db::SessionMode::Hold,
+            )
+            .unwrap();
+
+        let entries = db.get_entries_by_session(&session.id).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(!entries[0].typed);
+        assert_eq!(entries[0].text, "fallback text preserved");
+    }
+
+    #[test]
+    fn test_hold_session_mixed_typed_untyped_persisted_entries() {
+        let db = Arc::new(Database::new_in_memory().unwrap());
+        let manager = SessionManager::new(db.clone());
+
+        let prefs = test_prefs();
+        let session = manager
+            .start_session(crate::db::SessionMode::Hold, &prefs, None)
+            .unwrap();
+
+        manager
+            .add_entry("typed hold", true, crate::db::SessionMode::Hold)
+            .unwrap();
+        manager
+            .add_entry("untyped hold", false, crate::db::SessionMode::Hold)
+            .unwrap();
+
+        let entries = db.get_entries_by_session(&session.id).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert!(entries[0].typed);
+        assert!(!entries[1].typed);
+        assert_eq!(entries[0].source, crate::db::SessionMode::Hold);
+        assert_eq!(entries[1].source, crate::db::SessionMode::Hold);
+    }
+
+    #[test]
+    fn test_toggle_session_typed_entry_persisted() {
+        let db = Arc::new(Database::new_in_memory().unwrap());
+        let manager = SessionManager::new(db.clone());
+
+        let prefs = test_prefs();
+        let session = manager
+            .start_session(crate::db::SessionMode::Toggle, &prefs, None)
+            .unwrap();
+
+        manager
+            .add_entry("toggle typed", true, crate::db::SessionMode::Toggle)
+            .unwrap();
+
+        let entries = db.get_entries_by_session(&session.id).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].source, crate::db::SessionMode::Toggle);
+        assert!(entries[0].typed);
+    }
+
+    #[test]
+    fn test_toggle_session_untyped_entry_persisted() {
+        let db = Arc::new(Database::new_in_memory().unwrap());
+        let manager = SessionManager::new(db.clone());
+
+        let prefs = test_prefs();
+        let session = manager
+            .start_session(crate::db::SessionMode::Toggle, &prefs, None)
+            .unwrap();
+
+        manager
+            .add_entry("toggle untyped", false, crate::db::SessionMode::Toggle)
+            .unwrap();
+
+        let entries = db.get_entries_by_session(&session.id).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].source, crate::db::SessionMode::Toggle);
+        assert!(!entries[0].typed);
+    }
+
+    #[test]
+    fn test_ended_session_entry_metadata_survives() {
+        let db = Arc::new(Database::new_in_memory().unwrap());
+        let manager = SessionManager::new(db.clone());
+
+        let prefs = test_prefs();
+        let session = manager
+            .start_session(crate::db::SessionMode::Hold, &prefs, None)
+            .unwrap();
+
+        manager
+            .add_entry("final test", true, crate::db::SessionMode::Hold)
+            .unwrap();
+
+        let ended = manager.end_session().unwrap().unwrap();
+
+        let entries = db.get_entries_by_session(&session.id).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].text, "final test");
+        assert_eq!(entries[0].source, crate::db::SessionMode::Hold);
+        assert!(entries[0].typed);
+        assert_eq!(ended.chars_count, entries[0].text.len() as i64);
+    }
+
+    #[test]
+    fn test_persisted_session_has_correct_mode_after_end() {
+        let db = Arc::new(Database::new_in_memory().unwrap());
+        let manager = SessionManager::new(db.clone());
+
+        let prefs = test_prefs();
+        let session = manager
+            .start_session(crate::db::SessionMode::Hold, &prefs, None)
+            .unwrap();
+
+        manager
+            .add_entry("persist check", true, crate::db::SessionMode::Hold)
+            .unwrap();
+
+        manager.end_session().unwrap();
+
+        let persisted = db.get_session(&session.id).unwrap().unwrap();
+        assert_eq!(persisted.mode, crate::db::SessionMode::Hold);
+        assert!(persisted.ended_at.is_some());
+    }
 }
