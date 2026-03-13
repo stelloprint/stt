@@ -212,6 +212,7 @@ impl PermissionStatus {
     }
 }
 
+#[derive(Clone)]
 pub struct SecurityManager {
     typing_enabled: bool,
     global_disable: bool,

@@ -12,12 +12,12 @@ use db::{Database, Entry, EntryCreate, Session, SessionCreate};
 use keys::{ActivationState, KeysHandle};
 use parking_lot::Mutex;
 use parking_lot::RwLock;
-use permissions::{PermissionState, Permissions};
+use permissions::{PermissionState, Permissions, SecurityManager};
 use prefs::{Preferences, Prefs};
 use session::SessionManager;
 use std::sync::Arc;
 use stt::{SttEngine, TranscriptionResult};
-use type_::Typer;
+use tauri::Manager;
 
 pub struct AppState {
     pub prefs: Arc<Prefs>,
@@ -27,6 +27,7 @@ pub struct AppState {
     pub audio: Arc<AudioHandle>,
     pub record_capture: Arc<Mutex<Option<RecordCapture>>>,
     pub keys: RwLock<Option<Arc<KeysHandle>>>,
+    pub security: Arc<RwLock<SecurityManager>>,
 }
 
 #[tauri::command]
@@ -207,6 +208,26 @@ fn open_microphone_settings() -> Result<(), String> {
 #[tauri::command]
 fn open_accessibility_settings() -> Result<(), String> {
     Permissions::open_accessibility_settings()
+}
+
+#[tauri::command]
+fn get_typing_enabled(state: tauri::State<'_, AppState>) -> bool {
+    state.security.read().is_typing_enabled()
+}
+
+#[tauri::command]
+fn set_typing_enabled(state: tauri::State<'_, AppState>, enabled: bool) -> bool {
+    let mut security = state.security.write();
+    security.set_typing_enabled(enabled);
+    security.is_typing_enabled()
+}
+
+#[tauri::command]
+fn toggle_typing(state: tauri::State<'_, AppState>) -> bool {
+    let mut security = state.security.write();
+    let currently_enabled = security.is_typing_enabled();
+    security.set_typing_enabled(!currently_enabled);
+    security.is_typing_enabled()
 }
 
 #[tauri::command]
@@ -466,12 +487,15 @@ pub fn run() {
 
     let stt_engine = Arc::new(SttEngine::new());
 
+    let security_manager = Arc::new(RwLock::new(SecurityManager::new()));
+
     let keys_handle = match KeysHandle::new() {
         Ok(k) => {
             let audio = Arc::clone(&audio);
             let stt = Arc::clone(&stt_engine);
             let prefs = Arc::clone(&prefs);
             let session_manager = Arc::clone(&session_manager);
+            let security_manager = Arc::clone(&security_manager);
 
             k.on_activation(move |state, _source| match state {
                 ActivationState::Active => {
@@ -507,25 +531,61 @@ pub fn run() {
 
                     let prefs_clone = prefs.get();
                     let audio_data = audio.get_buffer();
+                    let typing_enabled = security_manager.read().is_typing_enabled();
                     if !audio_data.is_empty() {
                         log::info!("Transcribing {} audio samples", audio_data.len());
                         match stt.transcribe(&audio_data, &prefs_clone) {
                             Ok(result) => {
                                 log::info!("Transcription result: {}", result.text);
                                 if !result.text.is_empty() {
-                                    let typer_options = type_::TypeOptions {
-                                        method: type_::TypeMethod::Keystroke,
-                                        throttle_ms: prefs_clone.typing.throttle_ms as u64,
-                                        newline_append: prefs_clone.typing.newline_at_end,
-                                        clipboard_fallback: true,
-                                        detect_code_context: true,
-                                        detect_password_fields: true,
-                                    };
-                                    match type_::Typer::new(typer_options) {
-                                        Ok(typer) => {
-                                            let typing_result = typer.type_text(&result.text);
-                                            if let Err(e) = typing_result {
-                                                log::error!("Failed to type text: {}", e);
+                                    if !typing_enabled {
+                                        log::info!(
+                                            "Typing disabled via tray - adding untyped entry"
+                                        );
+                                        if let Err(e) =
+                                            session_manager.add_entry(&result.text, false, mode)
+                                        {
+                                            log::error!("Failed to add untyped entry: {}", e);
+                                        }
+                                    } else {
+                                        let typer_options = type_::TypeOptions {
+                                            method: type_::TypeMethod::Keystroke,
+                                            throttle_ms: prefs_clone.typing.throttle_ms as u64,
+                                            newline_append: prefs_clone.typing.newline_at_end,
+                                            clipboard_fallback: true,
+                                            detect_code_context: true,
+                                            detect_password_fields: true,
+                                        };
+                                        match type_::Typer::new(typer_options) {
+                                            Ok(typer) => {
+                                                let typing_result = typer.type_text(&result.text);
+                                                if let Err(e) = typing_result {
+                                                    log::error!("Failed to type text: {}", e);
+                                                    if let Err(e) = session_manager.add_entry(
+                                                        &result.text,
+                                                        false,
+                                                        mode,
+                                                    ) {
+                                                        log::error!(
+                                                            "Failed to add untyped entry: {}",
+                                                            e
+                                                        );
+                                                    }
+                                                } else {
+                                                    if let Err(e) = session_manager.add_entry(
+                                                        &result.text,
+                                                        true,
+                                                        mode,
+                                                    ) {
+                                                        log::error!(
+                                                            "Failed to add typed entry: {}",
+                                                            e
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                log::error!("Failed to create typer: {}", e);
                                                 if let Err(e) = session_manager.add_entry(
                                                     &result.text,
                                                     false,
@@ -536,22 +596,6 @@ pub fn run() {
                                                         e
                                                     );
                                                 }
-                                            } else {
-                                                if let Err(e) = session_manager.add_entry(
-                                                    &result.text,
-                                                    true,
-                                                    mode,
-                                                ) {
-                                                    log::error!("Failed to add typed entry: {}", e);
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            log::error!("Failed to create typer: {}", e);
-                                            if let Err(e) =
-                                                session_manager.add_entry(&result.text, false, mode)
-                                            {
-                                                log::error!("Failed to add untyped entry: {}", e);
                                             }
                                         }
                                     }
@@ -587,6 +631,7 @@ pub fn run() {
         audio,
         record_capture: Arc::new(Mutex::new(None)),
         keys: RwLock::new(keys_handle),
+        security: Arc::clone(&security_manager),
     };
 
     tauri::Builder::default()
@@ -618,6 +663,9 @@ pub fn run() {
             request_accessibility_permission,
             open_microphone_settings,
             open_accessibility_settings,
+            get_typing_enabled,
+            set_typing_enabled,
+            toggle_typing,
             get_frontmost_app_name,
             start_session,
             end_session,
@@ -636,7 +684,83 @@ pub fn run() {
                         .build(),
                 )?;
             }
-            log::info!("STT App initialized");
+
+            use tauri::{
+                image::Image,
+                menu::{Menu, MenuItem},
+                tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+            };
+
+            let typing_enabled = app.state::<AppState>().security.read().is_typing_enabled();
+            let toggle_text = if typing_enabled {
+                "✓ Enable Typing"
+            } else {
+                "✗ Disable Typing"
+            };
+
+            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let toggle_typing =
+                MenuItem::with_id(app, "toggle_typing", toggle_text, true, None::<&str>)?;
+
+            let menu = Menu::with_items(app, &[&toggle_typing, &quit])?;
+
+            let icon = Image::from_path("icons/32x32.png")
+                .unwrap_or_else(|_| Image::from_path("icons/128x128.png").unwrap());
+
+            let _tray = TrayIconBuilder::new()
+                .icon(icon)
+                .menu(&menu)
+                .tooltip("STT - Speech to Text")
+                .on_menu_event(|app: &tauri::AppHandle, event| match event.id.as_ref() {
+                    "quit" => {
+                        std::process::exit(0);
+                    }
+                    "toggle_typing" => {
+                        let state = app.state::<AppState>();
+                        let mut security = state.security.write();
+                        let currently_enabled = security.is_typing_enabled();
+                        security.set_typing_enabled(!currently_enabled);
+                        let new_text = if security.is_typing_enabled() {
+                            "✓ Enable Typing"
+                        } else {
+                            "✗ Disable Typing"
+                        };
+                        log::info!("Typing toggled: {}", new_text);
+
+                        if let Some(tray) = app.tray_by_id("main") {
+                            let quit =
+                                MenuItem::with_id(app, "quit", "Quit", true, None::<&str>).unwrap();
+                            let toggle_typing = MenuItem::with_id(
+                                app,
+                                "toggle_typing",
+                                new_text,
+                                true,
+                                None::<&str>,
+                            )
+                            .unwrap();
+                            let menu = Menu::with_items(app, &[&toggle_typing, &quit]).unwrap();
+                            let _ = tray.set_menu(Some(menu));
+                        }
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray: &tauri::tray::TrayIcon, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            log::info!("STT App initialized with system tray");
             Ok(())
         })
         .run(tauri::generate_context!())
