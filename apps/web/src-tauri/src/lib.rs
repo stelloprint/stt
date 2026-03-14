@@ -7,7 +7,7 @@ mod session;
 mod stt;
 mod type_;
 
-use audio::{AudioHandle, RecordCapture};
+use audio::{AudioHandle, RecordCapture, SilenceLevel};
 use db::{Database, Entry, EntryCreate, Session, SessionCreate};
 use keys::{ActivationState, KeysHandle};
 use parking_lot::Mutex;
@@ -36,7 +36,20 @@ fn get_preferences(state: tauri::State<'_, AppState>) -> Preferences {
 
 #[tauri::command]
 fn update_preferences(state: tauri::State<'_, AppState>, prefs: Preferences) -> Result<(), String> {
-    state.prefs.update(prefs).map_err(|e| e.to_string())
+    state
+        .prefs
+        .update(prefs.clone())
+        .map_err(|e| e.to_string())?;
+
+    state
+        .audio
+        .set_silence_threshold(silence_level_from_pref(&prefs.silence_rms));
+
+    if let Some(keys) = state.keys.read().as_ref() {
+        keys.set_enabled(prefs.hotkeys.left_chord, prefs.hotkeys.right_chord);
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -436,6 +449,95 @@ fn uuid_v4() -> String {
     format!("{:016x}-{:04x}", timestamp, random as u16)
 }
 
+fn silence_level_from_pref(level: &prefs::SilenceRms) -> SilenceLevel {
+    match level {
+        prefs::SilenceRms::Low => SilenceLevel::Low,
+        prefs::SilenceRms::Medium => SilenceLevel::Medium,
+        prefs::SilenceRms::High => SilenceLevel::High,
+    }
+}
+
+fn session_mode_from_pref(mode: &prefs::ActivationMode) -> db::SessionMode {
+    match mode {
+        prefs::ActivationMode::Hold => db::SessionMode::Hold,
+        prefs::ActivationMode::Toggle => db::SessionMode::Toggle,
+    }
+}
+
+fn stop_and_finalize_capture(
+    audio: &AudioHandle,
+    stt: &SttEngine,
+    prefs: &Prefs,
+    session_manager: &SessionManager,
+) {
+    if let Err(e) = audio.stop() {
+        if !matches!(e, audio::AudioError::NotStarted) {
+            log::error!("Failed to stop audio capture: {}", e);
+        }
+    }
+
+    let Some(mode) = session_manager.get_current_session_mode() else {
+        log::warn!("No active session found when stopping capture");
+        if let Err(e) = session_manager.end_session() {
+            log::error!("Failed to end session: {}", e);
+        }
+        return;
+    };
+
+    let prefs_snapshot = prefs.get();
+    let audio_data = audio.get_buffer();
+    if !audio_data.is_empty() {
+        log::info!("Transcribing {} audio samples", audio_data.len());
+        match stt.transcribe(&audio_data, &prefs_snapshot) {
+            Ok(result) => {
+                log::info!("Transcription result: {}", result.text);
+                if !result.text.is_empty() {
+                    let typer_options = type_::TypeOptions {
+                        method: type_::TypeMethod::Keystroke,
+                        throttle_ms: prefs_snapshot.typing.throttle_ms as u64,
+                        newline_append: prefs_snapshot.typing.newline_at_end,
+                        clipboard_fallback: true,
+                        detect_code_context: true,
+                        detect_password_fields: true,
+                    };
+                    match type_::Typer::new(typer_options) {
+                        Ok(typer) => {
+                            let typing_result = typer.type_text(&result.text);
+                            if let Err(e) = typing_result {
+                                log::error!("Failed to type text: {}", e);
+                                if let Err(e) = session_manager.add_entry(&result.text, false, mode)
+                                {
+                                    log::error!("Failed to add untyped entry: {}", e);
+                                }
+                            } else if let Err(e) =
+                                session_manager.add_entry(&result.text, true, mode)
+                            {
+                                log::error!("Failed to add typed entry: {}", e);
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Failed to create typer: {}", e);
+                            if let Err(e) = session_manager.add_entry(&result.text, false, mode) {
+                                log::error!("Failed to add untyped entry: {}", e);
+                            }
+                        }
+                    }
+                }
+                if let Err(e) = audio.clear_buffer() {
+                    log::error!("Failed to clear audio buffer: {}", e);
+                }
+            }
+            Err(e) => {
+                log::error!("Transcription failed: {}", e);
+            }
+        }
+    }
+
+    if let Err(e) = session_manager.end_session() {
+        log::error!("Failed to end session: {}", e);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let prefs = match Prefs::new() {
@@ -473,101 +575,98 @@ pub fn run() {
             let prefs = Arc::clone(&prefs);
             let session_manager = Arc::clone(&session_manager);
 
+            let initial_prefs = prefs.get();
+            k.set_enabled(
+                initial_prefs.hotkeys.left_chord,
+                initial_prefs.hotkeys.right_chord,
+            );
+            audio.set_silence_threshold(silence_level_from_pref(&initial_prefs.silence_rms));
+
             k.on_activation(move |state, _source| match state {
                 ActivationState::Active => {
-                    log::info!("Hotkey activated - starting audio capture");
+                    let prefs_snapshot = prefs.get();
+                    audio.set_silence_threshold(silence_level_from_pref(
+                        &prefs_snapshot.silence_rms,
+                    ));
 
-                    let prefs = prefs.get();
-                    let mode = match prefs.mode {
-                        prefs::ActivationMode::Hold => db::SessionMode::Hold,
-                        prefs::ActivationMode::Toggle => db::SessionMode::Toggle,
-                    };
+                    match prefs_snapshot.mode {
+                        prefs::ActivationMode::Hold => {
+                            log::info!("Hotkey activated in hold mode - starting audio capture");
 
-                    if let Err(e) = session_manager.start_session(mode, &prefs, None) {
-                        log::error!("Failed to create session: {}", e);
-                    }
+                            let mode = session_mode_from_pref(&prefs_snapshot.mode);
+                            if let Err(e) =
+                                session_manager.start_session(mode, &prefs_snapshot, None)
+                            {
+                                log::error!("Failed to create session: {}", e);
+                                return;
+                            }
 
-                    if let Err(e) = audio.start() {
-                        log::error!("Failed to start audio capture: {}", e);
+                            if let Err(e) = audio.start() {
+                                log::error!("Failed to start audio capture: {}", e);
+                                if let Err(e) = session_manager.end_session() {
+                                    log::error!("Failed to end session after start failure: {}", e);
+                                }
+                            }
+                        }
+                        prefs::ActivationMode::Toggle => {
+                            if session_manager.is_active() || audio.is_recording() {
+                                log::info!(
+                                    "Toggle hotkey pressed while active - stopping audio capture"
+                                );
+                                stop_and_finalize_capture(&audio, &stt, &prefs, &session_manager);
+                                return;
+                            }
+
+                            log::info!("Toggle hotkey activated - starting audio capture");
+                            let mode = session_mode_from_pref(&prefs_snapshot.mode);
+                            if let Err(e) =
+                                session_manager.start_session(mode, &prefs_snapshot, None)
+                            {
+                                log::error!("Failed to create session: {}", e);
+                                return;
+                            }
+
+                            if let Err(e) = audio.start() {
+                                log::error!("Failed to start audio capture: {}", e);
+                                if let Err(e) = session_manager.end_session() {
+                                    log::error!("Failed to end session after start failure: {}", e);
+                                }
+                                return;
+                            }
+
+                            let silence_timeout_ms =
+                                (prefs_snapshot.silence_seconds * 1000.0).round() as u64;
+                            let audio = Arc::clone(&audio);
+                            let stt = Arc::clone(&stt);
+                            let prefs = Arc::clone(&prefs);
+                            let session_manager = Arc::clone(&session_manager);
+
+                            std::thread::spawn(move || {
+                                while audio.is_recording() && session_manager.is_active() {
+                                    if audio.get_silence_duration_ms() >= silence_timeout_ms {
+                                        log::info!(
+                                            "Silence timeout reached in toggle mode - stopping"
+                                        );
+                                        stop_and_finalize_capture(
+                                            &audio,
+                                            &stt,
+                                            &prefs,
+                                            &session_manager,
+                                        );
+                                        break;
+                                    }
+
+                                    std::thread::sleep(std::time::Duration::from_millis(100));
+                                }
+                            });
+                        }
                     }
                 }
                 ActivationState::Inactive => {
-                    log::info!("Hotkey released - stopping audio capture");
-                    if let Err(e) = audio.stop() {
-                        log::error!("Failed to stop audio capture: {}", e);
-                    }
-
-                    let Some(mode) = session_manager.get_current_session_mode() else {
-                        log::warn!("No active session found when releasing hotkey");
-                        if let Err(e) = session_manager.end_session() {
-                            log::error!("Failed to end session: {}", e);
-                        }
-                        return;
-                    };
-
-                    let prefs_clone = prefs.get();
-                    let audio_data = audio.get_buffer();
-                    if !audio_data.is_empty() {
-                        log::info!("Transcribing {} audio samples", audio_data.len());
-                        match stt.transcribe(&audio_data, &prefs_clone) {
-                            Ok(result) => {
-                                log::info!("Transcription result: {}", result.text);
-                                if !result.text.is_empty() {
-                                    let typer_options = type_::TypeOptions {
-                                        method: type_::TypeMethod::Keystroke,
-                                        throttle_ms: prefs_clone.typing.throttle_ms as u64,
-                                        newline_append: prefs_clone.typing.newline_at_end,
-                                        clipboard_fallback: true,
-                                        detect_code_context: true,
-                                        detect_password_fields: true,
-                                    };
-                                    match type_::Typer::new(typer_options) {
-                                        Ok(typer) => {
-                                            let typing_result = typer.type_text(&result.text);
-                                            if let Err(e) = typing_result {
-                                                log::error!("Failed to type text: {}", e);
-                                                if let Err(e) = session_manager.add_entry(
-                                                    &result.text,
-                                                    false,
-                                                    mode,
-                                                ) {
-                                                    log::error!(
-                                                        "Failed to add untyped entry: {}",
-                                                        e
-                                                    );
-                                                }
-                                            } else {
-                                                if let Err(e) = session_manager.add_entry(
-                                                    &result.text,
-                                                    true,
-                                                    mode,
-                                                ) {
-                                                    log::error!("Failed to add typed entry: {}", e);
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            log::error!("Failed to create typer: {}", e);
-                                            if let Err(e) =
-                                                session_manager.add_entry(&result.text, false, mode)
-                                            {
-                                                log::error!("Failed to add untyped entry: {}", e);
-                                            }
-                                        }
-                                    }
-                                }
-                                if let Err(e) = audio.clear_buffer() {
-                                    log::error!("Failed to clear audio buffer: {}", e);
-                                }
-                            }
-                            Err(e) => {
-                                log::error!("Transcription failed: {}", e);
-                            }
-                        }
-                    }
-
-                    if let Err(e) = session_manager.end_session() {
-                        log::error!("Failed to end session: {}", e);
+                    let prefs_snapshot = prefs.get();
+                    if matches!(prefs_snapshot.mode, prefs::ActivationMode::Hold) {
+                        log::info!("Hotkey released in hold mode - stopping audio capture");
+                        stop_and_finalize_capture(&audio, &stt, &prefs, &session_manager);
                     }
                 }
             });
