@@ -95,6 +95,7 @@
 {"issue_id":"stt-t4k","label":"integration"}
 {"issue_id":"stt-tsx","label":"frontend"}
 {"issue_id":"stt-u6f","label":"qa"}
+{"issue_id":"stt-u6f.1","label":"qa"}
 {"issue_id":"stt-uoz","label":"backend"}
 {"issue_id":"stt-uwb","label":"backend"}
 {"issue_id":"stt-uwb","label":"safe-parallel"}
