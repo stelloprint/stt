@@ -28,6 +28,15 @@ console.log(`Found ${doctypeCount} connected components, combining into tabbed v
 const parts = raw.split(/<!DOCTYPE html>/).filter(Boolean);
 const tabs = [];
 
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 for (const part of parts) {
   const lines = part.split("\n");
   const titleLine = lines.find((l) => l.includes("<title>"));
@@ -111,7 +120,7 @@ svg { display: block; width: 100vw; height: 100vh; }
 </style>
 </head>
 <body>
-<div id="tabs">${tabs.map((t, i) => `<button class="tab-btn${i === 0 ? " active" : ""}" onclick="showTab(${i})">${t.title.replace(/^Beads: /, "")}</button>`).join("\n")}</div>
+<div id="tabs">${tabs.map((t, i) => `<button class="tab-btn${i === 0 ? " active" : ""}" onclick="showTab(${i})">${escapeHtml(t.title.replace(/^Beads: /, ""))}</button>`).join("\n")}</div>
 <div id="tooltip"></div>
 <div id="legend">
   <h3>Status</h3>
@@ -137,6 +146,7 @@ const statusColors = { open: "#4a9eff", in_progress: "#f0ad4e", blocked: "#d9534
 const width = window.innerWidth, height = window.innerHeight;
 let showLabels = true;
 let currentSim = null;
+let currentZoom = null;
 
 ${tabs.map((t) => `
 function render${t.titleId}() {
@@ -148,7 +158,7 @@ function render${t.titleId}() {
   const defs = svg.append("defs");
   defs.append("marker").attr("id","arrow").attr("viewBox","0 -5 10 10").attr("refX",20).attr("refY",0).attr("markerWidth",6).attr("markerHeight",6).attr("orient","auto").append("path").attr("d","M0,-4L8,0L0,4").attr("fill","#666");
   const g = svg.append("g");
-  const zoom = d3.zoom().scaleExtent([0.1,4]).on("zoom",(e)=>g.attr("transform",e.transform)); svg.call(zoom);
+  currentZoom = d3.zoom().scaleExtent([0.1,4]).on("zoom",(e)=>g.attr("transform",e.transform)); svg.call(currentZoom);
   currentSim = d3.forceSimulation(nodes).force("link",d3.forceLink(links).id(d=>d.id).distance(140).strength(0.7)).force("charge",d3.forceManyBody().strength(-400)).force("x",d3.forceX(d=>150+d.layer*220).strength(0.3)).force("y",d3.forceY(height/2).strength(0.05)).force("collision",d3.forceCollide(50));
   const link = g.append("g").selectAll("line").data(links).join("line").attr("class",d=>"link "+d.type).attr("stroke-dasharray",d=>d.type==="parent-child"?"5,3":null);
   const node = g.append("g").selectAll("g").data(nodes).join("g").attr("class","node").call(d3.drag().on("start",dragStart).on("drag",dragged).on("end",dragEnd));
@@ -159,7 +169,7 @@ function render${t.titleId}() {
   const tooltip = d3.select("#tooltip");
   node.on("mouseover",(e,d)=>{tooltip.selectAll("*").remove();tooltip.text("");tooltip.append("span").attr("class","tt-id").text(d.id);tooltip.append("span").attr("class","tt-status").style("background",statusColors[d.status]||"#555").text(d.status);tooltip.append("br");tooltip.append("strong").text(d.title);tooltip.append("br");tooltip.append("span").text("Priority: P"+d.priority+" | Type: "+d.type);if(d.assignee){tooltip.append("br");tooltip.append("span").text("Assignee: "+d.assignee);}tooltip.append("br");tooltip.append("span").text("Layer: "+d.layer);tooltip.style("opacity",1).style("left",e.pageX+12+"px").style("top",e.pageY-10+"px");}).on("mouseout",()=>{tooltip.style("opacity",0);tooltip.selectAll("*").remove();});
   currentSim.on("tick",()=>{link.attr("x1",d=>d.source.x).attr("y1",d=>d.source.y).attr("x2",d=>d.target.x).attr("y2",d=>d.target.y);node.attr("transform",d=>"translate("+d.x+","+d.y+")");});
-  svg.call(zoom.transform,d3.zoomIdentity.translate(width/4,height/4).scale(0.8));
+  svg.call(currentZoom.transform,d3.zoomIdentity.translate(width/4,height/4).scale(0.8));
 }
 `).join("")}
 
@@ -168,7 +178,7 @@ function showTab(idx) {
   const fns = [${tabs.map((t) => "render" + t.titleId).join(",")}];
   if (fns[idx]) fns[idx]();
 }
-function resetZoom() { d3.select("#graph").transition().duration(500).call(d3.zoom().scaleExtent([0.1,4]).transform,d3.zoomIdentity.translate(width/4,height/4).scale(0.8)); }
+function resetZoom() { if (currentZoom) { d3.select("#graph").transition().duration(500).call(currentZoom.transform, d3.zoomIdentity.translate(width/4,height/4).scale(0.8)); } }
 function toggleLabels() { showLabels = !showLabels; d3.select("#graph").selectAll("text").style("opacity", showLabels ? 1 : 0); }
 function dragStart(e,d){if(!e.active)currentSim.alphaTarget(0.3).restart();d.fx=d.x;d.fy=d.y;}
 function dragged(e,d){d.fx=e.x;d.fy=e.y;}
