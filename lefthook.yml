@@ -15,13 +15,15 @@ output:
 pre-commit:
   parallel: true
   jobs:
-    - name: biome-check
-      run: bunx biome check --no-errors-on-unmatched --colors=off {staged_files}
+    - name: biome
       glob: "*.{ts,tsx,js,jsx,json,css}"
-
-    - name: biome-format
-      run: bunx biome format --no-errors-on-unmatched --colors=off {staged_files}
-      glob: "*.{ts,tsx,js,jsx,json,css}"
+      group:
+        piped: true
+        jobs:
+          - name: biome-format
+            run: bunx biome format --no-errors-on-unmatched --colors=off {staged_files}
+          - name: biome-check
+            run: bunx biome check --no-errors-on-unmatched --colors=off {staged_files}
 
     - name: cargo-fmt-check
       run: cargo fmt -- --check
@@ -140,8 +142,8 @@ post-checkout:
   jobs:
     - name: install-deps
       run: |
-        if [ "$1" = "1" ]; then
-          CHANGED=$(git diff --name-only "$2" "$3" 2>/dev/null | grep -E '^(bun\.lock|package\.json)$' || true)
+        if [ "$3" = "1" ]; then
+          CHANGED=$(git diff --name-only "$1" "$2" 2>/dev/null | grep -E '^(bun\.lock|package\.json)$' || true)
           if [ -n "$CHANGED" ]; then
             echo "Dependency files changed — running bun install..."
             bun install
