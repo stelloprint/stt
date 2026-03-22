@@ -158,6 +158,14 @@
 {"issue_id":"stt-im0","label":"safe-parallel"}
 {"issue_id":"stt-ir2","label":"fullstack"}
 {"issue_id":"stt-ir2","label":"safe-parallel"}
+{"issue_id":"stt-iyh","label":"fullstack"}
+{"issue_id":"stt-iyh","label":"integration"}
+{"issue_id":"stt-iyh","label":"platform"}
+{"issue_id":"stt-iyh","label":"qa"}
+{"issue_id":"stt-iyh.1","label":"fullstack"}
+{"issue_id":"stt-iyh.1","label":"integration"}
+{"issue_id":"stt-iyh.1","label":"platform"}
+{"issue_id":"stt-iyh.1","label":"qa"}
 {"issue_id":"stt-j53","label":"fullstack"}
 {"issue_id":"stt-j53","label":"integration"}
 {"issue_id":"stt-jsa","label":"backend"}
