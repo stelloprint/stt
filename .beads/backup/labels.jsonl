@@ -119,6 +119,9 @@
 {"issue_id":"stt-fys.18","label":"integration"}
 {"issue_id":"stt-fys.18","label":"qa"}
 {"issue_id":"stt-fys.18","label":"safe-parallel"}
+{"issue_id":"stt-fys.19","label":"cleanup"}
+{"issue_id":"stt-fys.19","label":"fullstack"}
+{"issue_id":"stt-fys.19","label":"integration"}
 {"issue_id":"stt-fys.2","label":"cleanup"}
 {"issue_id":"stt-fys.2","label":"fullstack"}
 {"issue_id":"stt-fys.2","label":"integration"}
