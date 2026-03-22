@@ -554,29 +554,29 @@ mod tests {
     }
 }
 
-    #[test]
-    fn test_validation_both_hotkeys_disabled() {
-        let mut prefs = Preferences::default();
-        prefs.hotkeys.left_chord = false;
-        prefs.hotkeys.right_chord = false;
-        let result = validate_preferences(&prefs);
-        assert!(result.is_err());
-    }
+#[test]
+fn test_validation_both_hotkeys_disabled() {
+    let mut prefs = Preferences::default();
+    prefs.hotkeys.left_chord = false;
+    prefs.hotkeys.right_chord = false;
+    let result = validate_preferences(&prefs);
+    assert!(result.is_err());
+}
 
-    #[test]
-    fn test_validation_max_file_gb_exceeds_limit() {
-        let mut prefs = Preferences::default();
-        prefs.record.max_file_gb = 32;
-        let result = validate_preferences(&prefs);
-        assert!(result.is_err());
-    }
+#[test]
+fn test_validation_max_file_gb_exceeds_limit() {
+    let mut prefs = Preferences::default();
+    prefs.record.max_file_gb = 32;
+    let result = validate_preferences(&prefs);
+    assert!(result.is_err());
+}
 
-    #[test]
-    fn test_validation_silence_seconds_out_of_range() {
-        let mut prefs = Preferences::default();
-        prefs.silence_seconds = 100.0;
-        assert!(validate_preferences(&prefs).is_err());
+#[test]
+fn test_validation_silence_seconds_out_of_range() {
+    let mut prefs = Preferences::default();
+    prefs.silence_seconds = 100.0;
+    assert!(validate_preferences(&prefs).is_err());
 
-        prefs.silence_seconds = 0.1;
-        assert!(validate_preferences(&prefs).is_err());
-    }
+    prefs.silence_seconds = 0.1;
+    assert!(validate_preferences(&prefs).is_err());
+}
