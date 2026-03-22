@@ -1,10 +1,177 @@
-# Lefthook configuration
+# Lefthook v2 configuration
 # https://github.com/evilmartians/lefthook
+
+glob_matcher: doublestar
+
+output:
+  - meta
+  - summary
+  - success
+  - failure
+  - execution
+  - execution_out
+  - skips
 
 pre-commit:
   parallel: true
   jobs:
-    # Add your pre-commit commands here
-    # Example:
-    # - name: lint
-    #   run:  lint
+    - name: biome
+      glob: "*.{ts,tsx,js,jsx,json,css}"
+      group:
+        piped: true
+        jobs:
+          - name: biome-format
+            run: bunx biome format --no-errors-on-unmatched --colors=off {staged_files}
+          - name: biome-check
+            run: bunx biome check --no-errors-on-unmatched --colors=off {staged_files}
+
+    - name: cargo-fmt-check
+      run: cargo fmt -- --check
+      root: apps/web/src-tauri/
+      glob: "**/*.rs"
+
+    - name: cargo-clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
+      root: apps/web/src-tauri/
+      glob: "**/*.rs"
+
+    - name: beads-pre-commit
+      run: |
+        if command -v bd > /dev/null 2>&1; then
+          BD_GIT_HOOK=1 bd hooks run pre-commit "$@"
+        fi
+
+    - name: no-env-files
+      glob: "*.env*"
+      run: |
+        echo "ERROR: Attempting to commit .env file(s):"
+        echo "  {staged_files}"
+        echo ""
+        echo ".env files contain secrets and must not be committed."
+        echo "To fix: git reset HEAD <file>"
+        exit 1
+      fail_text: ".env files are blocked from commit"
+
+    - name: no-debug-artifacts
+      run: |
+        for file in {staged_files}; do
+          if grep -n '\.only\|\.skip' "$file" 2>/dev/null; then
+            echo ""
+            echo "ERROR: Found .only or .skip test marker in: $file"
+            echo "Remove test markers before committing."
+            exit 1
+          fi
+        done
+      glob: "*.{ts,tsx,js,jsx}"
+
+commit-msg:
+  jobs:
+    - name: conventional-commit
+      run: |
+        SUBJECT=$(head -1 "{1}")
+        if ! echo "$SUBJECT" | grep -qE '^(feat|fix|chore|refactor|docs|test|style|perf|ci|build|revert)(\(.+\))?: .+'; then
+          echo "ERROR: Commit message does not follow conventional commit format."
+          echo ""
+          echo "Expected: <type>[(scope)]: <description>"
+          echo "  Types: feat, fix, chore, refactor, docs, test, style, perf, ci, build, revert"
+          echo ""
+          echo "Got: $SUBJECT"
+          exit 1
+        fi
+      fail_text: "Commit message must follow conventional commit format"
+
+    - name: subject-line-length
+      run: |
+        SUBJECT=$(head -1 "{1}")
+        LENGTH=${#SUBJECT}
+        if [ "$LENGTH" -gt 100 ]; then
+          echo "ERROR: Subject line is $LENGTH characters (max 100)."
+          echo "  $SUBJECT"
+          exit 1
+        fi
+      fail_text: "Subject line must be 100 characters or fewer"
+
+    - name: beads-prepare-commit-msg
+      run: |
+        if command -v bd > /dev/null 2>&1; then
+          BD_GIT_HOOK=1 bd hooks run prepare-commit-msg "$@"
+        fi
+
+pre-push:
+  parallel: true
+  jobs:
+    - name: protect-branches
+      run: |
+        BRANCH=$(git branch --show-current)
+        if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "develop" ]; then
+          echo "ERROR: Direct push to '$BRANCH' is blocked."
+          echo "Create a feature branch and push that instead."
+          exit 1
+        fi
+      fail_text: "Direct push to main/develop is not allowed"
+
+    - name: ultracite-check
+      run: bun run check
+      fail_text: "Run 'bun run fix' to auto-fix formatting and lint issues"
+
+    - name: type-check
+      run: bun run check-types
+      fail_text: "TypeScript type errors found. Fix errors before pushing."
+
+    - name: cargo-check
+      run: cargo check --all-targets --all-features
+      root: apps/web/src-tauri/
+      fail_text: "Rust compilation errors found"
+
+    - name: cargo-test
+      run: cargo test --all-features
+      root: apps/web/src-tauri/
+      fail_text: "Rust tests failed"
+
+    - name: build
+      run: bun run build
+      fail_text: "Build failed. Check for compilation errors."
+
+    - name: beads-pre-push
+      run: |
+        if command -v bd > /dev/null 2>&1; then
+          BD_GIT_HOOK=1 bd hooks run pre-push "$@"
+        fi
+
+post-checkout:
+  jobs:
+    - name: install-deps
+      run: |
+        if [ "$3" = "1" ]; then
+          CHANGED=$(git diff --name-only "$1" "$2" 2>/dev/null | grep -E '^(bun\.lock|package\.json)$' || true)
+          if [ -n "$CHANGED" ]; then
+            echo "Dependency files changed — running bun install..."
+            bun install
+          fi
+        fi
+
+    - name: beads-post-checkout
+      run: |
+        if command -v bd > /dev/null 2>&1; then
+          BD_GIT_HOOK=1 bd hooks run post-checkout "$@"
+        fi
+
+post-merge:
+  jobs:
+    - name: install-deps
+      run: |
+        CHANGED=$(git diff --name-only HEAD@{1} HEAD 2>/dev/null | grep -E '^(bun\.lock|package\.json|Cargo\.lock|apps/web/src-tauri/Cargo\.toml)$' || true)
+        if [ -n "$CHANGED" ]; then
+          echo "Dependency files changed — running bun install..."
+          bun install
+        fi
+
+    - name: beads-post-merge
+      run: |
+        if command -v bd > /dev/null 2>&1; then
+          BD_GIT_HOOK=1 bd hooks run post-merge "$@"
+        fi
+
+# post-commit review reminder — populated by stt-fys.11
+post-commit:
+  jobs: []
