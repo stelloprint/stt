@@ -4,15 +4,21 @@ This is a Speech-To-Text app for local and secure use on MacOS without sending d
 
 ## Development Commands
 
-Bun is the package manager and runtime for this project. Refer to `package.json` for supported scripts.
+**Package manager and runtime:** Bun at the repo root. Workspaces live under `apps/*` and `packages/*`. See root and workspace `package.json` files for all scripts.
 
-Most formatting and common issues are automatically fixed. Run `bun run fix` before committing.
+**Typical workflow after code changes**
 
-## Ultracite Code Standards
+1. **Format and lint (JS/TS/JSON/CSS)** — Biome via Ultracite (see below). Auto-fix what you can, then verify:
+   - `bun run fix` — apply safe fixes and formatting (run before commit).
+   - `bun run check` — read-only; matches what pre-push enforces for the JS stack.
+2. **Types** — all workspaces: `bun run check-types`.
+3. **Tests** — web (Vitest): `bun run --filter web test`; watch mode: `bun run --filter web test:watch`. Rust (Tauri crate): from `apps/web/src-tauri/`, `cargo test --all-features`. Pre-push does **not** run Vitest; run web tests when you change app or test code.
+4. **Rust-only changes** (`apps/web/src-tauri/`) — `cargo fmt`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo check --all-targets --all-features` as needed. `cargo fmt -- --check` verifies without writing files.
 
-This project uses **Ultracite**, a zero-config preset that enforces strict code quality standards through automated formatting and linting. The *ultracite* skill describes how to use the CLI and the *code-standards* reference file outline quality expectations for this organization. Make sure to abide by these standards when reviewing code before committing.
+**Build and dev**
 
-Biome (the underlying engine) provides robust linting and formatting. Most issues are automatically fixable.
+- `bun run build` — build all workspace packages (pre-push runs this).
+- `bun run dev` — dev for all filtered packages; `bun run dev:web` / `bun run dev:native` for specific apps.
 
 ---
 
@@ -36,24 +42,25 @@ bd close <id>         # Complete work
 - Run `bd prime` for detailed command reference and session close protocol
 - Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
 
-## Session Completion
+<!-- END BEADS INTEGRATION -->
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+---
+
+## Workflow
 
 **MANDATORY WORKFLOW:**
 0. **Find a task** - Get assigned to an issue or check for ready work: `bd ready`
-4. **Understand the task** - Use `bd show <id>` to fully understand the ticket including epics, parent/child chains, dependencies and contracts.
-1. **Claim an issue** - `bd update <id> --status=in_progress`
-2. **Do the work**
-2. **Run quality gates** (if code changed) - Tests, linters, builds
+1. **Understand the task** - Use `bd show <id>` to fully understand the ticket including epics, parent/child chains, dependencies and contracts.
+2. **Claim an issue** - `bd update <id> --status=in_progress`so other agents don't work on it
+3. **Do the work**
+4. **Run quality gates** (if code changed) - Tests, linters, formatters and builds
 5. **Review** - Wait for human review of your work and suggest issues for anything that needs follow-up
 6. **Commit & Close** Upon approval, commit changes with a detailed message and mark complete: `bd close <id>`
-4. **File issues for remaining work** - Create issues for approved follow up items
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND clean up is complete
-7. **Hand off** - Provide context for next session
+7. **File issues for remaining work** - Create issues for the follow up items approved by the reviewer
+8. **Clean up** - Clear stashes, prune remote branches
+9. **Verify** - All changes committed AND clean up is complete
+10. **Hand off** - Provide context for the next session
 
 **CRITICAL RULES:**
 - Work is NOT complete until review is passed and hand off is complete
 - NEVER stop before committing - that leaves work stranded locally
-<!-- END BEADS INTEGRATION -->
