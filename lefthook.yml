@@ -36,6 +36,7 @@ pre-commit:
       glob: "**/*.rs"
 
     - name: beads-pre-commit
+      timeout: 120s
       run: |
         if command -v bd > /dev/null 2>&1; then
           BD_GIT_HOOK=1 bd hooks run pre-commit "$@"
@@ -92,6 +93,7 @@ commit-msg:
       fail_text: "Subject line must be 150 characters or fewer"
 
     - name: beads-prepare-commit-msg
+      timeout: 120s
       run: |
         if command -v bd > /dev/null 2>&1; then
           BD_GIT_HOOK=1 bd hooks run prepare-commit-msg "$@"
@@ -133,6 +135,7 @@ pre-push:
       fail_text: "Build failed. Check for compilation errors."
 
     - name: beads-pre-push
+      timeout: 120s
       run: |
         if command -v bd > /dev/null 2>&1; then
           BD_GIT_HOOK=1 bd hooks run pre-push "$@"
@@ -151,6 +154,7 @@ post-checkout:
         fi
 
     - name: beads-post-checkout
+      timeout: 120s
       run: |
         if command -v bd > /dev/null 2>&1; then
           BD_GIT_HOOK=1 bd hooks run post-checkout "$@"
@@ -167,6 +171,7 @@ post-merge:
         fi
 
     - name: beads-post-merge
+      timeout: 120s
       run: |
         if command -v bd > /dev/null 2>&1; then
           BD_GIT_HOOK=1 bd hooks run post-merge "$@"
