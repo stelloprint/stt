@@ -1,0 +1,12 @@
+# clippy.toml — tuned for this Tauri/macOS STT app
+#
+# Rationale for non-default thresholds:
+#
+# too-many-arguments-threshold = 8
+#   The CPAL audio callback functions (run_capture_loop, run_record_capture_loop)
+#   thread 8 Arc-wrapped shared-state objects (buffer, threshold, flags, rate, etc.)
+#   through the capture loop. This is standard for Tauri apps that share mutable
+#   audio state across threads. Refactoring to a struct would obscure the thread
+#   boundary and add indirection for no clarity gain. 8 is the smallest increase
+#   that covers the existing pattern.
+too-many-arguments-threshold = 8
