@@ -56,3 +56,9 @@ temp
 # Dolt database files (added by bd init)
 .dolt/
 *.db
+
+# macOS-specific files
+.DS_Store
+
+# Beads / Dolt files (added by bd init)
+.beads-credential-key

@@ -76,12 +76,12 @@ fn resample_linear(samples: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
 }
 
 pub struct AudioCapture {
-    is_recording: AtomicBool,
-    sample_rate: std::sync::RwLock<Option<u32>>,
-    buffer: std::sync::RwLock<Vec<f32>>,
-    silence_threshold: std::sync::RwLock<f32>,
-    silence_start_time: AtomicU64,
-    running: AtomicBool,
+    is_recording: Arc<AtomicBool>,
+    sample_rate: Arc<std::sync::RwLock<Option<u32>>>,
+    buffer: Arc<std::sync::RwLock<Vec<f32>>>,
+    silence_threshold: Arc<std::sync::RwLock<f32>>,
+    silence_start_time: Arc<AtomicU64>,
+    running: Arc<AtomicBool>,
     device_sample_rate: u32,
     input_channels: u16,
 }
@@ -89,12 +89,12 @@ pub struct AudioCapture {
 impl AudioCapture {
     pub fn new() -> Self {
         Self {
-            is_recording: AtomicBool::new(false),
-            sample_rate: std::sync::RwLock::new(None),
-            buffer: std::sync::RwLock::new(Vec::new()),
-            silence_threshold: std::sync::RwLock::new(SilenceLevel::Medium.threshold()),
-            silence_start_time: AtomicU64::new(0),
-            running: AtomicBool::new(false),
+            is_recording: Arc::new(AtomicBool::new(false)),
+            sample_rate: Arc::new(std::sync::RwLock::new(None)),
+            buffer: Arc::new(std::sync::RwLock::new(Vec::new())),
+            silence_threshold: Arc::new(std::sync::RwLock::new(SilenceLevel::Medium.threshold())),
+            silence_start_time: Arc::new(AtomicU64::new(0)),
+            running: Arc::new(AtomicBool::new(false)),
             device_sample_rate: 44100,
             input_channels: 1,
         }
@@ -117,19 +117,15 @@ impl AudioCapture {
         self.silence_start_time.store(0, Ordering::SeqCst);
         self.running.store(true, Ordering::SeqCst);
 
-        let buffer = Arc::new(std::sync::RwLock::new(Vec::<f32>::new()));
-        let silence_threshold = Arc::new(std::sync::RwLock::new(SilenceLevel::Medium.threshold()));
-        let silence_start_time = Arc::new(AtomicU64::new(0));
-        let is_recording = Arc::new(AtomicBool::new(true));
-        let running = Arc::new(AtomicBool::new(true));
-        let sample_rate = Arc::new(std::sync::RwLock::new(None::<u32>));
+        let buffer = Arc::clone(&self.buffer);
+        let silence_threshold = Arc::clone(&self.silence_threshold);
+        let silence_start_time = Arc::clone(&self.silence_start_time);
+        let is_recording = Arc::clone(&self.is_recording);
+        let running = Arc::clone(&self.running);
+        let sample_rate = Arc::clone(&self.sample_rate);
 
-        let this = self;
-        *buffer.write().unwrap() = this.buffer.read().unwrap().clone();
-        *silence_threshold.write().unwrap() = *this.silence_threshold.read().unwrap();
-
-        let device_sample_rate = this.device_sample_rate;
-        let input_channels = this.input_channels;
+        let device_sample_rate = self.device_sample_rate;
+        let input_channels = self.input_channels;
 
         thread::spawn(move || {
             if let Err(e) = run_capture_loop(
@@ -159,7 +155,6 @@ impl AudioCapture {
         }
 
         self.running.store(false, Ordering::SeqCst);
-        self.buffer.write().unwrap().clear();
         self.silence_start_time.store(0, Ordering::SeqCst);
 
         Ok(())
@@ -963,6 +958,18 @@ mod tests {
         let capture = AudioCapture::new();
         assert!(!capture.is_recording());
         assert_eq!(capture.get_silence_duration_ms(), 0);
+    }
+
+    #[test]
+    fn test_audio_capture_stop_preserves_buffer() {
+        let capture = AudioCapture::new();
+        capture.buffer.write().unwrap().extend([0.1, 0.2, 0.3]);
+        capture
+            .is_recording
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+
+        assert!(capture.stop().is_ok());
+        assert_eq!(capture.buffer.read().unwrap().len(), 3);
     }
 
     #[test]

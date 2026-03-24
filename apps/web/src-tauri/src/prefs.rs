@@ -552,8 +552,6 @@ mod tests {
         let json = serde_json::to_string(&SilenceRms::High).unwrap();
         assert_eq!(json, "\"high\"");
     }
-}
-
     #[test]
     fn test_validation_both_hotkeys_disabled() {
         let mut prefs = Preferences::default();
@@ -580,3 +578,4 @@ mod tests {
         prefs.silence_seconds = 0.1;
         assert!(validate_preferences(&prefs).is_err());
     }
+}
