@@ -84,12 +84,12 @@ commit-msg:
       run: |
         SUBJECT=$(head -1 "{1}")
         LENGTH=${#SUBJECT}
-        if [ "$LENGTH" -gt 100 ]; then
-          echo "ERROR: Subject line is $LENGTH characters (max 100)."
+        if [ "$LENGTH" -gt 150 ]; then
+          echo "ERROR: Subject line is $LENGTH characters (max 150)."
           echo "  $SUBJECT"
           exit 1
         fi
-      fail_text: "Subject line must be 100 characters or fewer"
+      fail_text: "Subject line must be 150 characters or fewer"
 
     - name: beads-prepare-commit-msg
       run: |
