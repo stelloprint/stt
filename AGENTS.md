@@ -8,83 +8,13 @@ Bun is the package manager and runtime for this project. Refer to `package.json`
 
 Most formatting and common issues are automatically fixed. Run `bun run fix` before committing.
 
----
-
-## Issue Tracking
-
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started or the *tracking-issues* skill.
-
-## Workflow
-1. Get assigned to an issue or check for ready work: `bd ready`
-2. Claim an issue: `bd update <id> --status=in_progress`
-3. Do the work
-4. Wait for human review
-5. Upon approval, commit changs and mark complete: `bd close <id>`
-6. Sync: `bd sync` (or let git hooks handle it)
-
-### Landing the Plane (Session Completion)
-
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
-
-**MANDATORY WORKFLOW:**
-
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed):
-   ```zsh
-   bun run check      # Lint
-   bun run check-types # Types
-   bun run fix # Auto Fix
-   bun run build      # Build
-   ```
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```zsh
-   git pull --rebase
-   bd sync
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
-
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
-
----
-
-## Agent Worktrees
-
-Coding agents work in isolated git worktrees created by their Team Lead. These environments must be created using the `task.sh` tool to allow parallel agent collaboration.
-
-More details available in the **task-worktrees** skill.
-
-```zsh
-task.sh start <task ID + descriptive feature name>        # Create worktree + new branch, configure beads
-```
-
----
-
 ## Ultracite Code Standards
 
-This project uses **Ultracite**, a zero-config preset that enforces strict code quality standards through automated formatting and linting. 
-
-The *ultracite* skill describes how to use the CLI and the *code-standards* reference file outline quality expectations for this organization. Make sure to abide by these standards when reviewing code before committing.
+This project uses **Ultracite**, a zero-config preset that enforces strict code quality standards through automated formatting and linting. The *ultracite* skill describes how to use the CLI and the *code-standards* reference file outline quality expectations for this organization. Make sure to abide by these standards when reviewing code before committing.
 
 Biome (the underlying engine) provides robust linting and formatting. Most issues are automatically fixable.
 
 ---
-
-## Testing
-
-- Write assertions inside `it()` or `test()` blocks
-- Avoid done callbacks in async tests - use async/await instead
-- Don't use `.only` or `.skip` in committed code
-
-**No test suite exists yet.** If adding tests, use Vitest.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
@@ -111,24 +41,19 @@ bd close <id>         # Complete work
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
 
 **MANDATORY WORKFLOW:**
-
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
+0. **Find a task** - Get assigned to an issue or check for ready work: `bd ready`
+4. **Understand the task** - Use `bd show <id>` to fully understand the ticket including epics, parent/child chains, dependencies and contracts.
+1. **Claim an issue** - `bd update <id> --status=in_progress`
+2. **Do the work**
 2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd dolt push
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
+5. **Review** - Wait for human review of your work and suggest issues for anything that needs follow-up
+6. **Commit & Close** Upon approval, commit changes with a detailed message and mark complete: `bd close <id>`
+4. **File issues for remaining work** - Create issues for approved follow up items
 5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
+6. **Verify** - All changes committed AND clean up is complete
 7. **Hand off** - Provide context for next session
 
 **CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
+- Work is NOT complete until review is passed and hand off is complete
+- NEVER stop before committing - that leaves work stranded locally
 <!-- END BEADS INTEGRATION -->
