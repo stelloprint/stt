@@ -80,4 +80,4 @@ call_lefthook()
   fi
 }
 
-call_lefthook run "pre-commit" "$@"
+call_lefthook run "post-commit" "$@"
