@@ -20,7 +20,9 @@
     "dev:native": "bun run --filter native dev",
     "dev:web": "bun run --filter web dev",
     "check": "ultracite check",
-    "fix": "ultracite fix"
+    "fix": "ultracite fix",
+    "hooks:install": "bunx lefthook install",
+    "hooks:run": "bunx lefthook run"
   },
   "dependencies": {
     "@stt/env": "workspace:*",
