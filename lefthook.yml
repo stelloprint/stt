@@ -70,11 +70,11 @@ commit-msg:
     - name: conventional-commit
       run: |
         SUBJECT=$(head -1 "{1}")
-        if ! echo "$SUBJECT" | grep -qE '^(feat|fix|chore|refactor|docs|test|style|perf|ci|build|revert)(\(.+\))?: .+'; then
+        if ! echo "$SUBJECT" | grep -qE '^(feat|task|fix|chore|refactor|docs|test|style|perf|ci|build|revert)(\(.+\))?: .+'; then
           echo "ERROR: Commit message does not follow conventional commit format."
           echo ""
           echo "Expected: <type>[(scope)]: <description>"
-          echo "  Types: feat, fix, chore, refactor, docs, test, style, perf, ci, build, revert"
+          echo "  Types: feat, task, fix, chore, refactor, docs, test, style, perf, ci, build, revert"
           echo ""
           echo "Got: $SUBJECT"
           exit 1
